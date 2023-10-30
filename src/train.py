@@ -22,7 +22,7 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecVideoRecorder
 from stable_baselines3.ppo import PPO
 from sb3_contrib.ppo_mask import MaskablePPO
-from action.controllers import SimpleUnitDiscreteController
+from action.controllers import SimpleUnitDiscreteController, SimpleFactoryController
 from wrappers.obs_wrappers import SimpleUnitObservationWrapper
 from wrappers.sb3_action_mask import SB3InvalidActionWrapper
 from net.net import UNetWithResnet50Encoder
@@ -80,7 +80,6 @@ class EarlyRewardParserWrapper(gym.Wrapper):
         self.reward_parser.reset(global_info_own, stats)
         reward = self.reward_parser.parse(self.env.state, stats, global_info_own)
 
-        stats: StatsStateDict = self.env.state.stats[agent]
         info = dict()
         metrics = dict()
         metrics["ice_dug"] = (
@@ -195,7 +194,8 @@ def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps=100):
         env = SB3InvalidActionWrapper(
             env,
             factory_placement_policy=place_near_random_ice,
-            controller=SimpleUnitDiscreteController(env.env_cfg),
+            unit_controller=SimpleUnitDiscreteController(env.env_cfg),
+            factory_controller=SimpleFactoryController(env.env_cfg),
         )
 
         env = SimpleUnitObservationWrapper(
@@ -277,7 +277,7 @@ def evaluate(args, env_id, model):
     print(out)
 
 
-def train(args, env_id, model: PPO, invalid_action_masking):
+def train(args, env_id, model: MaskablePPO, factory_model: MaskablePPO, invalid_action_masking):
     """
     Trains the model
     """
@@ -298,10 +298,13 @@ def train(args, env_id, model: PPO, invalid_action_masking):
     )
 
     logger.info("Starting learning")
-    model.learn(
-        args.total_timesteps,
-        callback=[TensorboardCallback(tag="train_metrics"), eval_callback],
-    )
+
+    for i in range(args.total_timesteps):
+        if i % 2:
+            model.learn(1, callback=[TensorboardCallback(tag="unit_train_metrics"), eval_callback])
+        else:
+            factory_model.learn(1, callback=[TensorboardCallback(tag="factory_train_metrics"), eval_callback])
+    
     logger.info("Saving model")
     model.save(osp.join(args.log_path, "models/latest_model"))
 
@@ -312,7 +315,7 @@ def main(args):
     """
 
     logger.debug("Starting main")
-
+    
     logger.info(f"Training with args {args}")
     if args.seed is not None:
         set_random_seed(args.seed)
@@ -336,14 +339,18 @@ def main(args):
             }
         }
     policy_kwargs_factory = {
-        "features_extractor_class": FactoryNet
+        "features_extractor_class": FactoryNet,
+        "features_extractor_kwargs": {
+            "num_actions": 3
+        }
     }
-    rollout_steps = 4000
+    rollout_steps = 1000
     model = MaskablePPO(
         "MultiInputPolicy",
         env,
+        agent_type="unit",
         n_steps=rollout_steps // args.n_envs,
-        batch_size=800,
+        batch_size=8,
         learning_rate=3e-4,
         policy_kwargs=policy_kwargs_unit,
         verbose=1,
@@ -351,12 +358,27 @@ def main(args):
         gamma=0.99,
         tensorboard_log=osp.join(args.log_path),
     )
-    # TODO: create another model for the factory
+
+    model_factory = MaskablePPO(
+        "MultiInputPolicy",
+        env,
+        agent_type='factory',
+        n_steps=rollout_steps // args.n_envs,
+        batch_size=800,
+        learning_rate=3e-4,
+        policy_kwargs=policy_kwargs_factory,
+        verbose=1,
+        n_epochs=2,
+        target_kl=0.05,
+        gamma=0.99,
+        tensorboard_log=osp.join(args.log_path),
+    )
+
     logger.debug(f"Model: {model}")
     if args.eval:
         evaluate(args, env_id, model)
     else:
-        train(args, env_id, model, invalid_action_masking)
+        train(args, env_id, model, model_factory, invalid_action_masking)
 
 
 if __name__ == "__main__":

@@ -13,5 +13,9 @@
     "mounts": [
         "source=${localWorkspaceFolder},target=/usr/src/luxai,type=bind,consistency=cached"
     ],
-    "forwardPorts": [ 8888 ]
+    "forwardPorts": [ 8888 ],
+    "runArgs": [
+        "-m",
+        "24576m"
+    ]
 }

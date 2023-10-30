@@ -8,6 +8,8 @@ from stable_baselines3.common.distributions import Distribution
 from torch import nn
 from torch.distributions import Categorical
 from torch.distributions.utils import logits_to_probs
+import logging
+logger = logging.getLogger(__name__)
 
 SelfMaskableCategoricalDistribution = TypeVar("SelfMaskableCategoricalDistribution", bound="MaskableCategoricalDistribution")
 SelfMaskableMultiCategoricalDistribution = TypeVar(
@@ -258,18 +260,21 @@ class MaskableBernoulliDistribution(MaskableMultiCategoricalDistribution):
         super().__init__(action_dims)
 
 
-def make_masked_proba_distribution(action_space: spaces.Space) -> MaskableDistribution:
+def make_masked_proba_distribution(action_space: spaces.Space, agent_type: str) -> MaskableDistribution:
     """
     Return an instance of Distribution for the correct type of action space
 
     :param action_space: the input action space
     :return: the appropriate Distribution object
     """
-
     if isinstance(action_space, spaces.Discrete):
         return MaskableCategoricalDistribution(action_space.n)
     elif isinstance(action_space, spaces.MultiDiscrete):
-        return MaskableMultiCategoricalDistribution(action_space.nvec)
+        if agent_type == 'factory':
+            
+            return MaskableCategoricalDistribution(action_space.nvec[1])
+        return MaskableCategoricalDistribution(action_space.nvec[0])
+        #return MaskableMultiCategoricalDistribution(action_space.nvec)
     elif isinstance(action_space, spaces.MultiBinary):
         return MaskableBernoulliDistribution(action_space.n)
     else:

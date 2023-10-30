@@ -20,7 +20,7 @@ class Controller:
         self.logger = logging.getLogger(f"{__name__}_{id(self)}")
         self.action_space = action_space
 
-    def unit_action_to_lux_action(
+    def action_to_lux_action(
         self, agent: str, obs: Dict[str, Any], action: npt.NDArray
     ):
         """
@@ -29,16 +29,6 @@ class Controller:
         """
         raise NotImplementedError()
     
-    def factory_action_to_lux_action(
-        self, agent: str, obs: Dict[str, Any], action: npt.NDArray
-    ):
-        """
-        Takes as input the current "raw observation" and the parameterized action and returns
-        an action formatted for the Lux env
-        """
-        self.logger.debug("Creating lux action")
-        raise NotImplementedError()
-
     def action_masks(self, agent: str, obs: Dict[str, Any]):
         """
         Generates a boolean action mask indicating in each \
@@ -162,6 +152,7 @@ class SimpleUnitDiscreteController(Controller):
     def action_to_lux_action(
         self, agent: str, obs: Dict[str, Any], action: npt.NDArray
     ):
+        logging.debug(f"Creating lux action for agent {agent} with action\n{action}")
         unit_action = self.unit_action_to_lux_action(agent, obs, action)
         return unit_action
 
@@ -205,20 +196,6 @@ class SimpleUnitDiscreteController(Controller):
 
         return lux_action
 
-    def factory_action_to_lux_action(
-        self, agent: str, obs: Dict[str, Any], action: npt.NDArray
-    ):
-        self.logger.debug(f"Creating lux action for factory {agent} with action {action}")
-
-        lux_action = {}
-        shared_obs = obs["player_0"]
-        factories = shared_obs["factories"][agent]
-        
-        for i, factory_id in enumerate(factories.keys()):
-            lux_action[factory_id] = np.argmax(action[i])
-
-        return lux_action
-
     def action_masks(self, agent: str, obs: Dict[str, Any]):
         """
         Defines a simplified action mask for this controller's action space
@@ -256,7 +233,7 @@ class SimpleUnitDiscreteController(Controller):
                 ] = f_data["strain_id"]
 
         units = shared_obs["units"][agent]
-        action_mask = np.zeros((self.total_act_dims, self.env_cfg.map_size, self.env_cfg.map_size), dtype=bool)
+        action_mask = np.ones((self.total_act_dims, self.env_cfg.map_size, self.env_cfg.map_size), dtype=bool)
         for unit_id in units.keys():
             
             # get position of unit
@@ -330,3 +307,47 @@ class SimpleUnitDiscreteController(Controller):
                 ] = True
     
         return action_mask
+
+
+
+class SimpleFactoryController(Controller):
+    """
+    A simple controller that controls only the robot \
+    that will get spawned.
+    """
+
+    def __init__(self, env_cfg) -> None:
+        """
+
+        """
+        logger.info(f"Creating SimpleFactoryController")
+        self.logger = logging.getLogger(f"{__name__}_{id(self)}")
+        self.env_cfg = env_cfg
+        action_space = spaces.Discrete(3)
+        super().__init__(action_space)
+
+
+    def action_to_lux_action(
+        self, agent: str, obs: Dict[str, Any], action: npt.NDArray
+    ):
+        logging.debug(f"Creating lux action for agent {agent} with action\n{action}")
+        unit_action = self.factory_action_to_lux_action(agent, obs, action)
+        return unit_action
+
+    def factory_action_to_lux_action(
+        self, agent: str, obs: Dict[str, Any], action: npt.NDArray
+    ):
+        self.logger.debug(f"Creating lux action for factory {agent} with action {action}")
+
+        lux_action = {}
+        shared_obs = obs["player_0"]
+        factories = shared_obs["factories"][agent]
+        
+        for i, factory_id in enumerate(factories.keys()):
+            lux_action[factory_id] = np.argmax(action[i])
+
+        return lux_action
+    
+
+    def action_masks(self, agent: str, obs: Dict[str, Any]):
+        return np.ones((3,), dtype=bool)

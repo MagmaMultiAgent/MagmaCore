@@ -16,6 +16,8 @@
     "forwardPorts": [ 8888 ],
     "runArgs": [
         "--gpus",
-        "device=0"
+        "device=0",
+        "-m",
+        "24576m"
     ]
 }

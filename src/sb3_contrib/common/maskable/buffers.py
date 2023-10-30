@@ -148,6 +148,7 @@ class MaskableDictRolloutBuffer(DictRolloutBuffer):
 
     def __init__(
         self,
+        agent_type: str,
         buffer_size: int,
         observation_space: spaces.Space,
         action_space: spaces.Space,
@@ -157,7 +158,8 @@ class MaskableDictRolloutBuffer(DictRolloutBuffer):
         n_envs: int = 1,
     ):
         self.action_masks = None
-        super().__init__(buffer_size, observation_space, action_space, device, gae_lambda, gamma, n_envs=n_envs)
+        self.agent_type = agent_type
+        super().__init__(agent_type, buffer_size, observation_space, action_space, device, gae_lambda, gamma, n_envs=n_envs)
         logger.info(f"Creating {self.__class__.__name__}")
         self.logger = logging.getLogger(f"{__name__}_{id(self)}")
 
@@ -165,14 +167,20 @@ class MaskableDictRolloutBuffer(DictRolloutBuffer):
         if isinstance(self.action_space, spaces.Discrete):
             mask_dims = self.action_space.n
         elif isinstance(self.action_space, spaces.MultiDiscrete):
-            mask_dims = sum(self.action_space.nvec)
+            if self.agent_type == 'factory':
+                mask_dims = self.action_space.nvec[1]
+            else:
+                mask_dims = self.action_space.nvec[0]
         elif isinstance(self.action_space, spaces.MultiBinary):
             mask_dims = 2 * self.action_space.n  # One mask per binary outcome
         else:
             raise ValueError(f"Unsupported action space {type(self.action_space)}")
 
         self.mask_dims = mask_dims
-        self.action_masks = np.ones((self.buffer_size, self.n_envs, self.mask_dims, self.obs_shape['map'][1], self.obs_shape['map'][1]), dtype=np.float32)
+        if self.agent_type == 'factory':
+            self.action_masks = np.ones((self.buffer_size, self.n_envs, self.mask_dims), dtype=np.float32)
+        else:
+            self.action_masks = np.ones((self.buffer_size, self.n_envs, self.mask_dims, self.obs_shape['map'][1], self.obs_shape['map'][1]), dtype=np.float32)
 
         super().reset()
 
@@ -180,8 +188,16 @@ class MaskableDictRolloutBuffer(DictRolloutBuffer):
         """
         :param action_masks: Masks applied to constrain the choice of possible actions.
         """
+
         if action_masks is not None:
-            self.action_masks[self.pos] = action_masks.reshape((self.n_envs, self.mask_dims, self.obs_shape['map'][1], self.obs_shape['map'][1]))
+            if self.agent_type == 'factory':
+                logger.debug(f"Adding action masks {action_masks.shape}")
+                logger.debug(f"pos {self.pos}")
+                logger.debug(f"mask dim {self.mask_dims}")
+                self.action_masks[self.pos] = action_masks.reshape((self.n_envs, self.mask_dims))
+                logger.debug(f"action masks {self.action_masks[self.pos].shape}")
+            else:
+                self.action_masks[self.pos] = action_masks.reshape((self.n_envs, self.mask_dims, self.obs_shape['map'][1], self.obs_shape['map'][1]))
 
         super().add(*args, **kwargs)
 

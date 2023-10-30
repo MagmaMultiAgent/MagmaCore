@@ -5,7 +5,7 @@ from stable_baselines3.common.vec_env import VecEnv
 EXPECTED_METHOD_NAME = "action_masks"
 
 
-def get_action_masks(env: GymEnv) -> np.ndarray:
+def get_action_masks(env: GymEnv, agent_type: str) -> np.ndarray:
     """
     Checks whether gym env exposes a method returning invalid action masks
 
@@ -14,9 +14,9 @@ def get_action_masks(env: GymEnv) -> np.ndarray:
     """
 
     if isinstance(env, VecEnv):
-        return np.stack(env.env_method(EXPECTED_METHOD_NAME))
+        return np.stack(env.env_method(EXPECTED_METHOD_NAME,agent_type))
     else:
-        return getattr(env, EXPECTED_METHOD_NAME)()
+        return getattr(env, EXPECTED_METHOD_NAME)(agent_type)
 
 
 def is_masking_supported(env: GymEnv) -> bool:

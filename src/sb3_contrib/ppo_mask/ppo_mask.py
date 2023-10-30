@@ -20,7 +20,8 @@ from sb3_contrib.common.maskable.buffers import MaskableDictRolloutBuffer, Maska
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.maskable.utils import get_action_masks, is_masking_supported
 from sb3_contrib.ppo_mask.policies import CnnPolicy, MlpPolicy, MultiInputPolicy
-
+import logging
+logger = logging.getLogger(__name__)
 SelfMaskablePPO = TypeVar("SelfMaskablePPO", bound="MaskablePPO")
 
 
@@ -79,6 +80,7 @@ class MaskablePPO(OnPolicyAlgorithm):
         self,
         policy: Union[str, Type[MaskableActorCriticPolicy]],
         env: Union[GymEnv, str],
+        agent_type: str,
         learning_rate: Union[float, Schedule] = 3e-4,
         n_steps: int = 2048,
         batch_size: Optional[int] = 64,
@@ -125,7 +127,8 @@ class MaskablePPO(OnPolicyAlgorithm):
                 spaces.MultiBinary,
             ),
         )
-
+        
+        self.agent_type = agent_type
         self.batch_size = batch_size
         self.n_epochs = n_epochs
         self.clip_range = clip_range
@@ -144,6 +147,7 @@ class MaskablePPO(OnPolicyAlgorithm):
 
         self.policy = self.policy_class(
             self.observation_space,
+            self.agent_type,
             self.action_space,
             self.lr_schedule,
             **self.policy_kwargs,  # pytype:disable=not-instantiable
@@ -154,6 +158,7 @@ class MaskablePPO(OnPolicyAlgorithm):
             raise ValueError("Policy must subclass MaskableActorCriticPolicy")
 
         self.rollout_buffer = buffer_cls(
+            self.agent_type,
             self.n_steps,
             self.observation_space,
             self.action_space,
@@ -298,7 +303,7 @@ class MaskablePPO(OnPolicyAlgorithm):
 
                 # This is the only change related to invalid action masking
                 if use_masking:
-                    action_masks = get_action_masks(env)
+                    action_masks = get_action_masks(env, self.agent_type)
 
                 actions, values, log_probs = self.policy(obs_tensor, action_masks=action_masks)
 

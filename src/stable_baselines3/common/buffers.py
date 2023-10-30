@@ -704,6 +704,7 @@ class DictRolloutBuffer(RolloutBuffer):
 
     def __init__(
         self,
+        agent_type: str,
         buffer_size: int,
         observation_space: spaces.Space,
         action_space: spaces.Space,
@@ -718,7 +719,7 @@ class DictRolloutBuffer(RolloutBuffer):
 
         self.gae_lambda = gae_lambda
         self.gamma = gamma
-
+        self.agent_type = agent_type
         self.generator_ready = False
         self.reset()
 
@@ -727,7 +728,10 @@ class DictRolloutBuffer(RolloutBuffer):
         self.observations = {}
         for key, obs_input_shape in self.obs_shape.items():
             self.observations[key] = np.zeros((self.buffer_size, self.n_envs, *obs_input_shape), dtype=np.float32)
-        self.actions = np.zeros((self.buffer_size, self.n_envs, 64, 64), dtype=np.float32)
+        if self.agent_type == "factory":
+            self.actions = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        else: 
+            self.actions = np.zeros((self.buffer_size, self.n_envs, 64, 64), dtype=np.float32)
         self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.episode_starts = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)

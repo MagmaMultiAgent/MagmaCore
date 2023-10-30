@@ -49,6 +49,7 @@ class MaskableActorCriticPolicy(BasePolicy):
     def __init__(
         self,
         observation_space: spaces.Space,
+        agent_type: str,
         action_space: spaces.Space,
         lr_schedule: Schedule,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
@@ -89,7 +90,6 @@ class MaskableActorCriticPolicy(BasePolicy):
                 ),
             )
             net_arch = net_arch[0]
-
         # Default network architecture, from stable-baselines
         if net_arch is None:
             if features_extractor_class == NatureCNN:
@@ -97,6 +97,7 @@ class MaskableActorCriticPolicy(BasePolicy):
             else:
                 net_arch = dict(pi=[64, 64], vf=[64, 64])
 
+        self.agent_type = agent_type
         self.net_arch = net_arch
         self.activation_fn = activation_fn
         self.ortho_init = ortho_init
@@ -113,7 +114,7 @@ class MaskableActorCriticPolicy(BasePolicy):
 
         # Action distribution
         self.logger.debug(f"Action space: {action_space}")
-        self.action_dist = make_masked_proba_distribution(action_space)
+        self.action_dist = make_masked_proba_distribution(action_space, self.agent_type)
 
         self._build(lr_schedule)
 
@@ -143,6 +144,17 @@ class MaskableActorCriticPolicy(BasePolicy):
 
         values = self.value_net(latent_vf)
 
+        logger.debug(f"Latent pi SHAPEE: {latent_pi.shape}")
+        logger.debug(f"Latent vf SHAPEE: {latent_vf.shape}")
+        logger.debug(f"action_masks SHAPEE: {action_masks.shape}")
+        if self.agent_type == 'factory':
+            distribution = self._get_action_dist_from_latent(latent_pi)
+            if action_masks is not None:
+                distribution.apply_masking(action_masks)
+            actions = distribution.get_actions(deterministic=deterministic)
+            log_prob = distribution.log_prob(actions)
+            return actions, values, log_prob
+            
         latent_shape = latent_pi.shape
         assert len(latent_shape) == 4
 
@@ -219,13 +231,22 @@ class MaskableActorCriticPolicy(BasePolicy):
         #       net_arch here is an empty list and mlp_extractor does not
         #       really contain any layers (acts like an identity module).
         self.logger.debug(f"building mlp extractor, size: {self.features_dim}")
-        self.mlp_extractor = CustomExtractor(
+        if self.agent_type == 'factory':
+            self.mlp_extractor = MlpExtractor(
             self.features_dim,
             net_arch=self.net_arch,
             activation_fn=self.activation_fn,
             device=self.device,
-            obs_shape = self.observation_space['map'].shape[1],
         )
+        else:
+            self.mlp_extractor = CustomExtractor(
+                self.features_dim,
+                net_arch=self.net_arch,
+                activation_fn=self.activation_fn,
+                device=self.device,
+                obs_shape = self.observation_space['map'].shape[1],
+        )
+        
 
     def _build(self, lr_schedule: Schedule) -> None:
         """
@@ -361,6 +382,14 @@ class MaskableActorCriticPolicy(BasePolicy):
             latent_pi = self.mlp_extractor.forward_actor(pi_features)
             latent_vf = self.mlp_extractor.forward_critic(vf_features)
 
+        if self.agent_type == 'factory':
+            distribution = self._get_action_dist_from_latent(latent_pi)
+            if action_masks is not None:
+                distribution.apply_masking(action_masks)
+            log_prob = distribution.log_prob(actions)
+            values = self.value_net(latent_vf)
+            return values, log_prob, distribution.entropy()
+
         latent_shape = latent_pi.shape
         assert len(latent_shape) == 4
 
@@ -385,7 +414,7 @@ class MaskableActorCriticPolicy(BasePolicy):
         log_prob = log_prob.view(batch_size, height, width)
         log_prob = log_prob.sum(axis=[1,2])
 
-        self.logger.debug(f"Log prob from saved actions: {log_prob}")
+        #self.logger.debug(f"Log prob from saved actions: {log_prob}")
 
         values = self.value_net(latent_vf)
         return values, log_prob, distribution.entropy()
@@ -443,6 +472,7 @@ class MaskableActorCriticCnnPolicy(MaskableActorCriticPolicy):
     def __init__(
         self,
         observation_space: spaces.Space,
+        agent_type: str,
         action_space: spaces.Space,
         lr_schedule: Schedule,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
@@ -457,6 +487,7 @@ class MaskableActorCriticCnnPolicy(MaskableActorCriticPolicy):
     ):
         super().__init__(
             observation_space,
+            agent_type,
             action_space,
             lr_schedule,
             net_arch,
@@ -497,6 +528,7 @@ class MaskableMultiInputActorCriticPolicy(MaskableActorCriticPolicy):
     def __init__(
         self,
         observation_space: spaces.Dict,
+        agent_type: str,
         action_space: spaces.Space,
         lr_schedule: Schedule,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
@@ -511,6 +543,7 @@ class MaskableMultiInputActorCriticPolicy(MaskableActorCriticPolicy):
     ):
         super().__init__(
             observation_space,
+            agent_type,
             action_space,
             lr_schedule,
             net_arch,

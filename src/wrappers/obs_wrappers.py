@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 MAP_FEATURE_SIZE = 30
 GLOBAL_FEATURE_SIZE = 44
+FACTORY_FEATURE_SIZE = 24
 
 class SimpleUnitObservationWrapper(gym.ObservationWrapper):
     """
@@ -43,10 +44,12 @@ class SimpleUnitObservationWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.map_space = spaces.Box(low=-999, high=999, shape=(MAP_FEATURE_SIZE * 5, env.env_cfg.map_size, env.env_cfg.map_size), dtype=np.float32)
         self.global_space = spaces.Box(low=-999, high=999, shape=(GLOBAL_FEATURE_SIZE * 5,), dtype=np.float32)
+        self.factory_space = spaces.Box(low=-999, high=999, shape=(FACTORY_FEATURE_SIZE,), dtype=np.float32)
 
         self.observation_space = spaces.Dict({
             "map": self.map_space,
-            "global": self.global_space
+            "global": self.global_space,
+            "factory": self.factory_space
         })
         self.observation_parser = ObservationParser()
         self.max_observation_history = 10
@@ -55,11 +58,13 @@ class SimpleUnitObservationWrapper(gym.ObservationWrapper):
             self.observation_queue.append({
                 "player_0": {
                     "map": np.zeros((MAP_FEATURE_SIZE, env.env_cfg.map_size, env.env_cfg.map_size)),
-                    "global": np.zeros((GLOBAL_FEATURE_SIZE,))
+                    "global": np.zeros((GLOBAL_FEATURE_SIZE,)),
+                    "factory": np.zeros((FACTORY_FEATURE_SIZE,))
                 },
                 "player_1": {
                     "map": np.zeros((MAP_FEATURE_SIZE, env.env_cfg.map_size, env.env_cfg.map_size)),
-                    "global": np.zeros((GLOBAL_FEATURE_SIZE,))
+                    "global": np.zeros((GLOBAL_FEATURE_SIZE,)),
+                    "factory": np.zeros((FACTORY_FEATURE_SIZE,))
                 }
             })
 
@@ -78,9 +83,6 @@ class SimpleUnitObservationWrapper(gym.ObservationWrapper):
 
         converted_obs: Dict[str, Dict[str, np.ndarray]] = self.combine_observations(past_3_observations, selected_observations)
 
-        self.logger.debug(converted_obs.keys())
-        self.logger.debug(converted_obs["player_0"].keys())
-        self.logger.debug(converted_obs["player_0"]["map"].shape)
         return converted_obs
     
     def select_observations(self):
@@ -108,6 +110,7 @@ class SimpleUnitObservationWrapper(gym.ObservationWrapper):
             for obs in past3_observations:
                 map_obs = obs[player]["map"]
                 global_obs = obs[player]["global"]
+                factory_obs = obs[player]["factory"]
 
                 concatenated_map_obs.append(map_obs)
                 concatenated_global_obs.append(global_obs)
@@ -115,6 +118,7 @@ class SimpleUnitObservationWrapper(gym.ObservationWrapper):
             for obs in selected_observations:
                 map_obs = obs[player]["map"]
                 global_obs = obs[player]["global"]
+                factory_obs = obs[player]["factory"]
 
                 concatenated_map_obs.append(map_obs)
                 concatenated_global_obs.append(global_obs)
@@ -128,7 +132,8 @@ class SimpleUnitObservationWrapper(gym.ObservationWrapper):
 
             converted_obs[player] = {
                 "map": combined_map,
-                "global": combined_global
+                "global": combined_global,
+                "factory": factory_obs
             }
 
         return converted_obs
