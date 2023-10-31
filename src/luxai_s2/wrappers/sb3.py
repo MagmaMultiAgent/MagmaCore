@@ -64,6 +64,7 @@ class SB3Wrapper(gym.Wrapper):
         # The simplified wrapper removes the first two phases of the game by using predefined policies (trained or heuristic)
         # to handle those two phases during each reset
         if factory_placement_policy is None:
+            self.logger.debug("Factory policy is None")
             def factory_placement_policy(player, obs: ObservationStateDict):
                 potential_spawns = np.array(
                     list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
@@ -86,7 +87,7 @@ class SB3Wrapper(gym.Wrapper):
         self.prev_obs = None
 
     def step(self, action: Dict[str, npt.NDArray]):
-        self.logger.debug(f"Stepping environment with action\n{action}")
+        self.logger.debug(f"Stepping environment")
 
         # here, for each agent in the game we translate their action into a Lux S2 action
         lux_action = dict()
@@ -111,14 +112,18 @@ class SB3Wrapper(gym.Wrapper):
         obs, _ = self.env.reset(**kwargs)
         
         # then use the bid policy to go through the bidding phase
+        self.logger.debug("Bidding")
         action = dict()
         for agent in self.env.agents:
             action[agent] = self.bid_policy(agent, obs[agent])
+            self.logger.debug(f"bidding for agent {agent} with action {action[agent]}")
         obs, _, _, _, _ = self.env.step(action)
         
         # while real_env_steps < 0, we are in the factory placement phase
         # so we use the factory placement policy to step through this
+        self.logger.debug("Placing factories")
         while self.env.state.real_env_steps < 0:
+            self.logger.debug(f"real env steps: {self.env.state.real_env_steps}")
             action = dict()
             for agent in self.env.agents:
                 if my_turn_to_place_factory(
@@ -126,9 +131,15 @@ class SB3Wrapper(gym.Wrapper):
                     self.env.state.env_steps,
                 ):
                     action[agent] = self.factory_placement_policy(agent, obs[agent])
+                    self.logger.info(f"my turn: {agent} {action[agent]}")
                 else:
                     action[agent] = dict()
+                    self.logger.info(f"not my turn: {agent} {action[agent]}")
+            self.logger.debug(f"placement: {action}")
             obs, _, _, _, _ = self.env.step(action)
         self.prev_obs = obs
+
+        for agent in self.env.agents:
+            assert obs[agent]["teams"][agent]["factories_to_place"] == 0
         
         return obs, {}

@@ -2,22 +2,30 @@ import numpy as np
 from luxai_s2.unit import FactoryPlacementActionType
 from luxai_s2.state import ObservationStateDict
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 def random_factory_placement(player, obs: ObservationStateDict) -> FactoryPlacementActionType:
     """
     This policy places factories with 150 water and metal at random locations
     """
+
+    logger.debug("Using random_factory_placement policy")
+
     # we will spawn our factory in a random location with 150 metal and water if it is our turn to place
     potential_spawns = np.array(list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1))))
+    logger.debug(f"Potential spawns: {len(potential_spawns)}")
     spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
     return dict(spawn=spawn_loc, metal=150, water=150)
 
 def place_near_random_ice(player, obs: ObservationStateDict):
-    if obs["teams"][player]["metal"] == 0:
-        return dict()
+    logger.debug("Using place_near_random_ice policy")
+    
     potential_spawns = list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
     potential_spawns_set = set(potential_spawns)
+    logger.debug(f"Potential spawns: {len(potential_spawns)}")
     done_search = False
-    # if player == "player_1":
     ice_diff = np.diff(obs["board"]["ice"])
     pot_ice_spots = np.argwhere(ice_diff == 1)
     if len(pot_ice_spots) == 0:
@@ -44,5 +52,4 @@ def place_near_random_ice(player, obs: ObservationStateDict):
     if not done_search:
         pos = spawn_loc
 
-    metal = obs["teams"][player]["metal"]
-    return dict(spawn=pos, metal=metal, water=metal)
+    return dict(spawn=pos, metal=150, water=150)

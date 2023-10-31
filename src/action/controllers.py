@@ -120,7 +120,7 @@ class SimpleUnitDiscreteController(Controller):
         transfer_dir = id % (self.transfer_act_dims/3)
         transfer_type_mapping = [0, 1, 4]  # Mapping index to desired value
         transfer_type_index = id // (self.transfer_act_dims/3)  # 0 for ice, 1 for ore, 2 for power
-        transfer_type = transfer_type_mapping[transfer_type_index]
+        transfer_type = transfer_type_mapping[transfer_type_index.astype(int).item()]
         return np.array([1, transfer_dir, transfer_type, self.env_cfg.max_transfer_amount, 0, 1])
 
     def _is_pickup_action(self, id):
@@ -159,10 +159,26 @@ class SimpleUnitDiscreteController(Controller):
         """
         return np.array([4, 0, 0, 0, 0, 1])
 
+    def _get_build_light_action(self):
+        """
+        Converts the action id to build light factory action
+        """
+        return 0
+
     def action_to_lux_action(
         self, agent: str, obs: Dict[str, Any], action: npt.NDArray
     ):
         unit_action = self.unit_action_to_lux_action(agent, obs, action)
+
+        # add build actions for factories
+        shared_obs = obs[agent]
+        factories = shared_obs["factories"][agent]
+        for factory_id, factory in factories.items():
+            self.logger.debug(factory)
+            unit_action[factory_id] = self._get_build_light_action()
+
+        self.logger.debug(f"Final actions: {unit_action}")
+
         return unit_action
 
     def unit_action_to_lux_action(
@@ -171,7 +187,7 @@ class SimpleUnitDiscreteController(Controller):
         """
         Converts the action to a lux action
         """
-        self.logger.debug(f"Creating lux action for agent {agent} with action\n{action}")
+        self.logger.debug(f"Creating lux action for agent {agent}")
 
         shared_obs = obs["player_0"]
         lux_action = {}
@@ -239,14 +255,15 @@ class SimpleUnitDiscreteController(Controller):
             np.ones_like(shared_obs["board"]["rubble"], dtype=int) * -1
         )
         for player in shared_obs["units"]:
+            self.logger.debug(f"Player units: {player} {len(shared_obs['units'][player])}")
             for unit_id in shared_obs["units"][player]:
                 unit = shared_obs["units"][player][unit_id]
                 pos = np.array(unit["pos"])
-                player_occupancy_map[pos[0], pos[1]] = unit["id"]
-                
-        factories = {}
+                self.logger.debug(unit)
+                player_occupancy_map[pos[0], pos[1]] = int(unit["unit_id"].split("_")[1])
+
         for player in shared_obs["factories"]:
-            factories[player] = {}
+            self.logger.debug(f"Player factories: {player} {len(shared_obs['factories'][player])}")
             for unit_id in shared_obs["factories"][player]:
                 f_data = shared_obs["factories"][player][unit_id]
                 f_pos = f_data["pos"]
@@ -258,7 +275,7 @@ class SimpleUnitDiscreteController(Controller):
         units = shared_obs["units"][agent]
         action_mask = np.zeros((self.total_act_dims, self.env_cfg.map_size, self.env_cfg.map_size), dtype=bool)
         for unit_id in units.keys():
-            
+
             # get position of unit
             pos = np.array(unit["pos"])
 
@@ -324,7 +341,7 @@ class SimpleUnitDiscreteController(Controller):
                 ] = False
 
             # recharge should only be valid in the night
-            if shared_obs["step"] % 40 > 30:
+            if shared_obs["real_env_steps"] % 40 > 30:
                 action_mask[
                     self.recharge_dim_high - self.recharge_act_dims : self.recharge_dim_high, pos[0], pos[1]
                 ] = True

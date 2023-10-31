@@ -19,6 +19,8 @@ from torch import nn
 
 from sb3_contrib.common.maskable.distributions import MaskableDistribution, make_masked_proba_distribution
 
+import sys
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,9 @@ class MaskableActorCriticPolicy(BasePolicy):
 
         if action_masks is not None:
             assert latent_shape == action_masks.shape
+
+        #np.set_printoptions(threshold=sys.maxsize)
+        self.logger.debug(f"Action mask: {action_masks.shape}\n{action_masks.astype(int).sum(axis=(1, 2, 3))}")
 
         batch_size, action_channels, height, width = latent_shape
 
@@ -379,7 +384,7 @@ class MaskableActorCriticPolicy(BasePolicy):
         if action_masks is not None:
             distribution.apply_masking(action_masks)
         actions = actions.view(-1)
-        self.logger.debug(f"Transformed saved actions: {actions.shape}")
+        self.logger.debug(f"Transformed saved actions:\n{actions}")
         log_prob = distribution.log_prob(actions)
         
         log_prob = log_prob.view(batch_size, height, width)
