@@ -140,5 +140,6 @@ class SB3Wrapper(gym.Wrapper):
                     action[agent] = dict()
             obs, _, _, _, _ = self.env.step(action)
         self.prev_obs = obs
-        
+        for agent in self.env.agents:
+            assert obs[agent]["teams"][agent]["factories_to_place"] == 0
         return obs, {}

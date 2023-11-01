@@ -350,7 +350,7 @@ def main(args):
         env,
         agent_type="unit",
         n_steps=rollout_steps // args.n_envs,
-        batch_size=8,
+        batch_size=16,
         learning_rate=3e-4,
         policy_kwargs=policy_kwargs_unit,
         verbose=1,

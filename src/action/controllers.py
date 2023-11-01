@@ -110,7 +110,7 @@ class SimpleUnitDiscreteController(Controller):
         transfer_dir = id % (self.transfer_act_dims/3)
         transfer_type_mapping = [0, 1, 4]  # Mapping index to desired value
         transfer_type_index = id // (self.transfer_act_dims/3)  # 0 for ice, 1 for ore, 2 for power
-        transfer_type = transfer_type_mapping[transfer_type_index]
+        transfer_type = transfer_type_mapping[transfer_type_index.astype(int).item()]
         return np.array([1, transfer_dir, transfer_type, self.env_cfg.max_transfer_amount, 0, 1])
 
     def _is_pickup_action(self, id):
@@ -219,11 +219,9 @@ class SimpleUnitDiscreteController(Controller):
             for unit_id in shared_obs["units"][player]:
                 unit = shared_obs["units"][player][unit_id]
                 pos = np.array(unit["pos"])
-                player_occupancy_map[pos[0], pos[1]] = unit["id"]
+                player_occupancy_map[pos[0], pos[1]] = int(unit["unit_id"].split("_")[1])
                 
-        factories = {}
         for player in shared_obs["factories"]:
-            factories[player] = {}
             for unit_id in shared_obs["factories"][player]:
                 f_data = shared_obs["factories"][player][unit_id]
                 f_pos = f_data["pos"]
@@ -301,7 +299,7 @@ class SimpleUnitDiscreteController(Controller):
                 ] = False
 
             # recharge should only be valid in the night
-            if shared_obs["step"] % 40 > 30:
+            if shared_obs["real_env_steps"] % 40 > 30:
                 action_mask[
                     self.recharge_dim_high - self.recharge_act_dims : self.recharge_dim_high, pos[0], pos[1]
                 ] = True
