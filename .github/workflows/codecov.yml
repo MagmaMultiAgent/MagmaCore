@@ -19,7 +19,38 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Upload coverage reports to Codecov
-      run: codecov --token=${{ secrets.CODECOV_TOKEN }}
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    - name: Install devtools
+      run: |
+        sudo apt-get update -y 
+        sudo apt-get upgrade -y 
+        sudo apt-get install -y build-essential 
+        sudo apt-get install -y manpages-dev
+    - name: Install Pip
+      run: |
+        python -m pip install --upgrade pip
+
+    - name: Install vec_noise
+      run: |
+        pip install --no-cache-dir numpy==1.26.4
+        pip install --no-cache-dir wheel==0.42.0
+        pip install --no-cache-dir setuptools==69.0.3
+        pip install --no-cache-dir protobuf==4.24.0
+        pip install --disable-pip-version-check --no-deps --no-cache-dir vec_noise
+
+    - name: Install dependencies
+      run: |
+        pip install --no-cache-dir -r envs/pip/requirements_GH.txt
+        pip install --no-cache-dir --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+        pip install pytest-cov
+    - name: Run tests
+      run: |
+        pytest --cov=src tests/
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: true
