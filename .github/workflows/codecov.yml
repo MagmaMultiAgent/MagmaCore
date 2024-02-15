@@ -22,5 +22,5 @@ jobs:
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4.0.1
       env:
-            token: 317af548-ccb2-4dc6-a6b7-f63d5ef0177f
+            token:  ${{ secrets.CODECOV_TOKEN }}
             slug: MagmaMultiAgent/MagmaCore
