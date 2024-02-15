@@ -25,7 +25,7 @@ ENV PATH /opt/conda/bin:$PATH
 COPY envs/conda/environment.yml .
 
 # Copy requirements file
-COPY envs/pip/requirements.txt .
+COPY envs/pip/requirements_GH.txt .
 
 # Create environment from yaml file
 RUN conda env create -f environment.yml && conda clean -afy

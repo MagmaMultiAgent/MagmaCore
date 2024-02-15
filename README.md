@@ -1,9 +1,9 @@
-[![Docker Publish](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml)&nbsp;[![Pylint](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml)&nbsp;[![CodeQL Advanced](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/codeql.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/github-code-scanning/codeql)&nbsp;[![PyTest](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml)&nbsp;[![CodeCoverage](https://github.com/MagmaMultiAgent/MagmaCore/actions/workflows/codecov.yml/badge.svg)](https://github.com/MagmaMultiAgent/MagmaCore/actions/workflows/codecov.yml)
+[![Docker Publish](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml)&nbsp;[![Pylint](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml)&nbsp;[![CodeQL Advanced](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/codeql.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/github-code-scanning/codeql)&nbsp;[![PyTest](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml)&nbsp;[![CodeCoverage](https://github.com/MagmaMultiAgent/MagmaCore/actions/workflows/codecov.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/MagmaMultiAgent/MagmaCore/actions/workflows/codecov.yml)
 
 
 # Monolithic CNN-based solution with Action Queues
 
-In this system, we're essentially orchestrating a **monolithic solution** where a central brain controls all units and factories across the grid. This process is an upgrade to the one on the [CNN-Mixed branch](https://github.com/MagmaMultiAgent/MagmaCore/tree/v0.0.1-CNN-mixed).
+In this system, we're essentially orchestrating a **monolithic solution** where a central brain controls all units and factories across the grid. This process is an upgrade to the one on the [CNN-Mixed branch](https://github.com/MagmaMultiAgent/MagmaCore/tree/v0.0.1-CNN-mixed). Testig results can be found on the project [Wiki](https://github.com/MagmaMultiAgent/MagmaCore/wiki).
 
 
 # Getting Started
@@ -42,19 +42,10 @@ On a Mac, using a Dev Container can lead to problems due to image incompatibilit
 
 ## Binary
 
-You will need `Python 3.9` installed on your system. Once installed, you can install the Lux AI season 2 environment and optionally the GPU version with:
-
-```bash
-pip install --upgrade luxai_s2
-pip install juxai-s2 # installs the GPU version, requires a compatible GPU
-```
-
-Due to potential compatibility challenges when installing `gym` alongside `vec_noise` and the `stable_baselines3` package, it is advisable to apply specific version **tags** during installation to prevent potential crashes. To mitigate this, I've streamlined the package selection in the [environment.yml file](https://github.com/Getlar/VigIL-Game-Validation/blob/main/envs/conda/environment.yml), aiming to alleviate strain on the conda environment setup.
-
 To create a conda environment and use it run:
 
 ```bash
-conda env create -f environment.yml
+conda env create -f envs/environment.yml
 conda activate luxai_s2
 ```
 
@@ -66,7 +57,7 @@ apt update -y && apt upgrade -y && apt install -y build-essential && apt-get ins
 ```
 #### Base packages:
 ```bash
-pip install pettingzoo vec_noise
+pip install envs/environment_GH.txt
 ```
 
 #### Install JAX support: (Optional)
