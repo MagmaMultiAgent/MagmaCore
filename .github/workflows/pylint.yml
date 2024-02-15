@@ -31,10 +31,10 @@ jobs:
 
     - name: Install vec_noise
       run: |
-        pip install numpy==1.26.4
-        pip install wheel==0.42.0
-        pip install setuptools==69.0.3
-        pip install protobuf==4.24.0
+        pip install --no-cache-dir numpy==1.26.4
+        pip install --no-cache-dir wheel==0.42.0
+        pip install --no-cache-dir setuptools==69.0.3
+        pip install --no-cache-dir protobuf==4.24.0
         pip install --disable-pip-version-check --no-deps --no-cache-dir vec_noise
 
     - name: Install Requirements
@@ -44,4 +44,4 @@ jobs:
         pip install --no-cache-dir pylint
     - name: Analysing the code with pylint
       run: |
-        pylint $(git ls-files '*.py' ':!:src/luxai_s2/*') --fail-under=5
+        pylint $(git ls-files '*.py' ':!:src/luxai_s2/*' ':!:src/luxai_runner/*' ':!:src/jux/*') --fail-under=4

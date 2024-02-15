@@ -41,8 +41,11 @@ RUN pip install --no-cache-dir --upgrade pip
 # Install basic dev tools, like GCC
 RUN apt update -y && apt upgrade -y && apt install -y build-essential && apt-get install -y manpages-dev
 
+# Install vec_noise
+RUN pip install numpy==1.26.4 wheel==0.42.0 setuptools==69.0.3 protobuf==4.24.0 vec_noise
+
 # Install requirements
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements_GH.txt
 
 # Add Lux conda env to ipykernel to run Notebooks
 RUN python -m ipykernel install --user --name=luxai_s2 --display-name "LuxAI S2"

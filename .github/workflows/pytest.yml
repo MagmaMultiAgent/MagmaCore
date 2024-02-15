@@ -31,10 +31,10 @@ jobs:
 
     - name: Install vec_noise
       run: |
-        pip install numpy==1.26.4
-        pip install wheel==0.42.0
-        pip install setuptools==69.0.3
-        pip install protobuf==4.24.0
+        pip install --no-cache-dir numpy==1.26.4
+        pip install --no-cache-dir wheel==0.42.0
+        pip install --no-cache-dir setuptools==69.0.3
+        pip install --no-cache-dir protobuf==4.24.0
         pip install --disable-pip-version-check --no-deps --no-cache-dir vec_noise
 
     - name: Install Requirements

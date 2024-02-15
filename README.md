@@ -1,11 +1,10 @@
-[![Docker Publish](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml/badge.svg?branch=v0.0.1-CNN-mixed)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml)&nbsp;[![Pylint](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml/badge.svg?branch=v0.0.1-CNN-mixed)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml)&nbsp;[![CodeQL Advanced](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/codeql.yml/badge.svg?branch=v0.0.1-CNN-mixed)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/github-code-scanning/codeql)&nbsp;[![PyTest](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml/badge.svg?branch=v0.0.1-CNN-mixed)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml)&nbsp;
+[![Docker Publish](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/docker-publish.yml)&nbsp;[![Pylint](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pylint.yml)&nbsp;[![CodeQL Advanced](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/codeql.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/github-code-scanning/codeql)&nbsp;[![PyTest](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml/badge.svg?branch=v0.0.2-AQ)](https://github.com/Getlar/VigIL-Game-Validation/actions/workflows/pytest.yml)&nbsp;[![CodeCoverage](https://github.com/MagmaMultiAgent/MagmaCore/actions/workflows/codecov.yml/badge.svg)](https://github.com/MagmaMultiAgent/MagmaCore/actions/workflows/codecov.yml)
 
 
-# Monolithic CNN-based solution 
+# Monolithic CNN-based solution with Action Queues
 
-In this system, we're essentially orchestrating a **monolithic solution** where a central brain controls all units and factories across the grid. The process involves generating actions for all grid spaces initially, then filtering out those grid spaces where units exist, and subsequently executing actions for those units. This centralized approach ensures that all units and factories are managed and coordinated efficiently within the grid.
+In this system, we're essentially orchestrating a **monolithic solution** where a central brain controls all units and factories across the grid. This process is an upgrade to the one on the [CNN-Mixed branch](https://github.com/MagmaMultiAgent/MagmaCore/tree/v0.0.1-CNN-mixed).
 
-![Architecture](/docs/images/Architecture.jpg)
 
 # Getting Started
 
