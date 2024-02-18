@@ -142,9 +142,9 @@ def reset_store(store: dict):
             reset_store(store[key])
         else:
             if store[key].dtype in {torch.float32, torch.float64, torch.int32, torch.int64}:
-                store[key] = 0
+                store[key][:] = 0
             elif store[key].dtype in {torch.bool}: 
-                store[key] = False
+                store[key][:] = False
             else:
                 raise NotImplementedError(f"store[key].dtype={store[key].dtype}")
 
@@ -557,10 +557,10 @@ def main(args, device):
                 reset_store(valid_actions)
 
                 for player_id, player in enumerate(['player_0', 'player_1']):
-                    logprobs[player] = 0
-                    rewards[player] = 0
-                    dones = 0
-                    values[player] = 0
+                    logprobs[player][:] = 0
+                    rewards[player][:] = 0
+                    dones[:] = 0
+                    values[player][:] = 0
 
                 train_step = -1
             
