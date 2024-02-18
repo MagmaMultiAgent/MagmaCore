@@ -11,6 +11,7 @@ from parsers import ActionParser,FeatureParser,DenseRewardParser,Dense2RewardPar
 from kit.kit import obs_to_game_state
 from replay import random_init
 from player import Player
+import sys
 
 from torch import Tensor
 import torch
@@ -287,7 +288,7 @@ class LuxEnv(gym.Env):
     def seed(self, seed):
         self.proxy.seed(seed)
 
-    def reset(self, seed=None, options=None):
+    def reset(self, seed=None, options=None) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, Any]]:
         obs = self.reset_proxy(seed=seed, options=options)
         self.agents = {player: Player(player, self.env_cfg) for player in self.proxy.agents}
         self.players = list(self.agents.keys())
@@ -309,7 +310,7 @@ class LuxEnv(gym.Env):
 
         return obs_list, global_info
 
-    def step(self, actions):
+    def step(self, actions: dict[str, dict[str, np.ndarray]]) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]]:
         actions, action_stats = self.action_parser.parse(self.game_state, actions)
         obs, rewards, terminations, truncations, infos = self.proxy.step(actions)  # interact with env
         dones = {key: terminations[key] or truncations[key] for key in terminations.keys()}
@@ -361,7 +362,9 @@ class LuxEnv(gym.Env):
                 actions[id] = raw_action
             actions = tree.map_structure(lambda x: torch2np(x), actions)                
             obs_list, reward, terminated, truncation, info = self.step(actions)
-            done = terminated | truncation
+            _terminated = list(terminated.values())
+            _truncation = list(truncation.values())
+            done = sum(_terminated + _truncation) > 0
             return_own += reward[own_id]
             return_enemy += reward[enemy_id]
             episode_length += 1
@@ -398,7 +401,8 @@ class LuxEnv(gym.Env):
         observations = concatenate(
                 observations_list, output_obs, observation_shape_each_player
             )
-        return deepcopy(observations)
+        # return deepcopy(observations)
+        return observations
     
     def concatenate_action(self, action_list):
         bs = len(action_list)
@@ -409,7 +413,8 @@ class LuxEnv(gym.Env):
         actions = concatenate(
                 action_list, output_action, action_shape_each_player
             )
-        return deepcopy(actions)
+        # return deepcopy(actions)
+        return actions
 
     def concatenate_va(self, valid_action_list):
         bs = len(valid_action_list)
@@ -419,7 +424,8 @@ class LuxEnv(gym.Env):
         actions = concatenate(
                 valid_action_list, output_action, self.single_vas_space
             )
-        return deepcopy(actions)
+        # return deepcopy(actions)
+        return actions
 
 def lux_worker(index, env_fn, pipe, parent_pipe, shared_memory, error_queue):
     assert shared_memory is None
@@ -496,13 +502,19 @@ class LuxSyncVectorEnv(gym.vector.AsyncVectorEnv):
         self.vas = concatenate(
             self.single_vas_space, valid_actions, self.vas
         )
-        return deepcopy(self.vas)
+        # return deepcopy(self.vas)
+        return self.vas
     
     def split(self, action):
+        """
+        Split dict of actions or observations into list of dicts, where each dict belongs to one env.
+        """
+        
         actions = [{} for _ in range(self.num_envs)]
         for key, value in action.items():
             if isinstance(value, Tensor):
-                value = value.cpu().detach().numpy()
+                #value = value.cpu().detach().numpy()
+                pass
             if isinstance(value, dict):
                 sub_action = self.split(value)
                 value = sub_action
@@ -519,7 +531,8 @@ class LuxSyncVectorEnv(gym.vector.AsyncVectorEnv):
         observations = concatenate(
                 observation_shape_each_player, observations_list, output_obs
             )
-        return deepcopy(observations)
+        # return deepcopy(observations)
+        return observations
 
     def concatenate_action(self, action_list):
         bs = len(action_list)
@@ -530,7 +543,8 @@ class LuxSyncVectorEnv(gym.vector.AsyncVectorEnv):
         actions = concatenate(
                 action_shape_each_player, action_list, output_action
             )
-        return deepcopy(actions)
+        # return deepcopy(actions)
+        return actions
 
     def concatenate_va(self, valid_action_list):
         bs = len(valid_action_list)
@@ -540,7 +554,8 @@ class LuxSyncVectorEnv(gym.vector.AsyncVectorEnv):
         actions = concatenate(
                 self.single_vas_space, valid_action_list, output_action
             )
-        return deepcopy(actions)
+        # return deepcopy(actions)
+        return actions
     
     def eval(self, eval_policy, enemy_policy=None):
         self._assert_is_running()
@@ -551,7 +566,8 @@ class LuxSyncVectorEnv(gym.vector.AsyncVectorEnv):
         results = [pipe.recv() for pipe in self.parent_pipes]
         results = self._process_eval_resluts(results)
 
-        return deepcopy(results)
+        # return deepcopy(results)
+        return results
     
     def _process_eval_resluts(self, results):
         if self.num_envs==1:

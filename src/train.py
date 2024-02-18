@@ -5,6 +5,7 @@ import time
 from distutils.util import strtobool
 from pprint import pprint
 import sys
+from typing import Union
 
 import numpy as np
 import torch
@@ -20,6 +21,7 @@ import gzip
 from kit.load_from_replay import replay_to_state_action, get_obs_action_from_json
 from utils import save_args, save_model, load_model, eval_model, _process_eval_resluts, cal_mean_return, make_env
 
+
 import logging
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s %(module)s %(funcName)s %(message)s',
@@ -32,6 +34,11 @@ logger = logging.getLogger("train")
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore")
+
+
+# Types
+TensorPerKey = dict[str, torch.Tensor]
+TensorPerPlayer = dict[str, dict[str, torch.Tensor]]
 
 
 LOG = True
@@ -104,7 +111,6 @@ def parse_args():
     
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
-    args.num_steps = 1024*args.num_envs
     args.train_num_collect = args.minibatch_size if args.train_num_collect is None else args.train_num_collect
     args.minibatch_size = int(args.train_num_collect // args.num_minibatches)
     args.max_train_step = int(args.train_num_collect // args.num_envs)
@@ -112,50 +118,84 @@ def parse_args():
     return args
 
 
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+def layer_init(layer, std: float = np.sqrt(2), bias_const: float = 0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
 
 
-def create_model(args, device):
+def put_into_store(data: dict, ind: int, store: dict, max_train_step: int, num_envs: int, device: torch.device):
+    for key, value in data.items():
+        if isinstance(value, dict):
+            if key not in store:
+                store[key] = {}
+            put_into_store(value, ind, store[key], max_train_step, num_envs, device)
+        else:
+            if key not in store:
+                store[key] = torch.zeros((max_train_step, num_envs) + value.shape[1:], dtype=value.dtype).to(device)
+            store[key][ind] = value
+
+
+def reset_store(store: dict):
+    for key, value in store.items():
+        if isinstance(value, dict):
+            reset_store(store[key])
+        else:
+            if store[key].dtype in {torch.float32, torch.float64, torch.int32, torch.int64}:
+                store[key] = 0
+            elif store[key].dtype in {torch.bool}: 
+                store[key] = False
+            else:
+                raise NotImplementedError(f"store[key].dtype={store[key].dtype}")
+
+
+def create_model(device: torch.device, eval: bool, load_model_path: Union[str, None], evaluate_num: int, learning_rate: float, writer: Union[None, SummaryWriter] = None):
+    """
+    Create the model
+    """
     agent = Net().to(device)
-    if args.load_model_path is not None:
-        agent.load_state_dict(torch.load(args.load_model_path))
+    if load_model_path is not None:
+        agent.load_state_dict(torch.load(load_model_path))
         print('load successfully')
-        if args.eval:
+        if eval:
             import sys
             for i in range(10):
                 eval_results = []
-                for _ in range(args.evaluate_num):
+                for _ in range(evaluate_num):
                     eval_results.append(eval_model(agent))
                 eval_results = _process_eval_resluts(eval_results)
                 if LOG:
                     for key, value in eval_results.items():
-                        writer.add_scalar(f"eval/{key}", value, i)
+                        if writer:
+                            writer.add_scalar(f"eval/{key}", value, i)
                 pprint(eval_results)
             sys.exit()
-    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    optimizer = optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
     return agent, optimizer
 
 
-np2torch = lambda x, dtype: torch.tensor(x).type(dtype).to(device)
-torch2np = lambda x, dtype: x.cpu().numpy().astype(dtype)
-
-
-def sample_action_for_player(agent, obs, valid_action, forced_action = None):
+def sample_action_for_player(agent: Net, obs: TensorPerKey, valid_action: TensorPerKey, forced_action: Union[TensorPerKey, None] = None):
+    """
+    Sample action and value from the agent
+    """
     logprob, value, action, entropy = agent(
-        np2torch(obs['global_feature'], torch.float32),
-        np2torch(obs['map_feature'], torch.float32), 
-        tree.map_structure(lambda x: np2torch(x, torch.int16), obs['action_feature']),
-        tree.map_structure(lambda x: np2torch(x, torch.bool), valid_action),
-        None if forced_action is None else tree.map_structure(lambda x: np2torch(x, torch.float32), forced_action)
+        obs['global_feature'],
+        obs['map_feature'], 
+        obs['action_feature'],
+        valid_action,
+        forced_action
     )
 
     return logprob, value, action, entropy
 
 
-def sample_actions_for_players(envs, agent, next_obs):
+def sample_actions_for_players(envs: LuxSyncVectorEnv,
+                               agent: Net,
+                               next_obs: TensorPerPlayer
+                               ) -> tuple[TensorPerPlayer, TensorPerPlayer, TensorPerPlayer, TensorPerPlayer]:
+    """
+    Sample action and value for both players
+    """
     action = dict()
     valid_action = dict()
     logprob = dict()
@@ -164,25 +204,41 @@ def sample_actions_for_players(envs, agent, next_obs):
     for player_id, player in enumerate(['player_0', 'player_1']):
         with torch.no_grad():
             _valid_action = envs.get_valid_actions(player_id)
+            _valid_action = tree.map_structure(lambda x: np2torch(x, torch.bool), _valid_action)
             
             _logprob, _value, _action, _ = sample_action_for_player(agent, next_obs[player], _valid_action, None)
 
-            action[player_id] = _action
-            valid_action[player_id] = _valid_action
-            logprob[player_id] = _logprob
-            value[player_id] = _value
+            action[player] = _action
+            valid_action[player] = _valid_action
+            logprob[player] = _logprob
+            value[player] = _value
 
     return action, valid_action, logprob, value
 
 
-def calculate_returns(envs, agent, next_obs, values, device, max_train_step, num_envs, gamma, gae_lambda):
+def calculate_returns(envs: LuxSyncVectorEnv,
+                      agent: Net,
+                      next_obs: TensorPerKey,
+                      next_done: torch.Tensor,
+                      dones: torch.Tensor,
+                      rewards: TensorPerKey,
+                      values: TensorPerKey,
+                      device: torch.device,
+                      max_train_step: int,
+                      num_envs: int,
+                      gamma: float,
+                      gae_lambda: float
+                      ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    """
+    Calculate GAE returns
+    """
     returns = dict(player_0=torch.zeros((max_train_step, num_envs)).to(device),player_1=torch.zeros((max_train_step, num_envs)).to(device))
     advantages = dict(player_0=torch.zeros((max_train_step, num_envs)).to(device),player_1=torch.zeros((max_train_step, num_envs)).to(device))
     with torch.no_grad():
         _, _, _, value = sample_actions_for_players(envs, agent, next_obs)
 
-        for player_id, player in enumerate(['player_0', 'player_1']):
-            next_value = value[player_id]
+        for player in ['player_0', 'player_1']:
+            next_value = value[player]
             next_value = next_value.reshape(1,-1)
             lastgaelam = 0
             for t in reversed(range(max_train_step-1)):
@@ -199,26 +255,39 @@ def calculate_returns(envs, agent, next_obs, values, device, max_train_step, num
     return returns, advantages
 
 
-def calculate_loss(mb_inds, mb_advantages, newvalue, entropy, ratio, clip_coef, ent_coef, vf_coef):
+def calculate_loss(advantages: torch.Tensor,
+                   returns: torch.Tensor,
+                   values: torch.Tensor,
+                   newvalue: torch.Tensor,
+                   entropy: torch.Tensor,
+                   ratio: torch.Tensor,
+                   clip_vloss: bool,
+                   clip_coef: float,
+                   ent_coef: float,
+                   vf_coef: float
+                   ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Calculate the loss
+    """
     # Policy loss
-    pg_loss1 = -mb_advantages * ratio
-    pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - clip_coef, 1 + clip_coef)
+    pg_loss1 = -advantages * ratio
+    pg_loss2 = -advantages * torch.clamp(ratio, 1 - clip_coef, 1 + clip_coef)
     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
     # Value loss
     newvalue = newvalue.view(-1)
-    if args.clip_vloss:
-        v_loss_unclipped = (newvalue - b_returns[player][mb_inds]) ** 2
-        v_clipped = b_values[player][mb_inds] + torch.clamp(
-            newvalue - b_values[player][mb_inds],
+    if clip_vloss:
+        v_loss_unclipped = (newvalue - returns) ** 2
+        v_clipped = values + torch.clamp(
+            newvalue - values,
             -clip_coef,
             clip_coef,
         )
-        v_loss_clipped = (v_clipped - b_returns[player][mb_inds]) ** 2
+        v_loss_clipped = (v_clipped - returns) ** 2
         v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
         v_loss = 0.5 * v_loss_max.mean()
     else:
-        v_loss = 0.5 * ((newvalue - b_returns[player][mb_inds]) ** 2).mean()
+        v_loss = 0.5 * ((newvalue - returns) ** 2).mean()
 
     # Entropy loss
     entropy_loss = entropy.mean()
@@ -228,15 +297,38 @@ def calculate_loss(mb_inds, mb_advantages, newvalue, entropy, ratio, clip_coef, 
     return loss, pg_loss, entropy_loss, v_loss
 
 
-def optimize_for_player(player, agent, optimizer, b_obs, b_va, b_actions, b_logprobs, b_advantages, b_returns, b_values, train_num_collect, minibatch_size, clip_coef, norm_adv, ent_coef, vf_coef, max_grad_norm):
+def optimize_for_player(player: str,
+                        agent: Net,
+                        envs: LuxSyncVectorEnv,
+                        optimizer: optim.Optimizer,
+                        b_inds: torch.Tensor,
+                        b_obs: dict[str, list[torch.Tensor]],
+                        b_va: dict[str, list[torch.Tensor]],
+                        b_actions: dict[str, list[torch.Tensor]],
+                        b_logprobs: dict[str, list[torch.Tensor]],
+                        b_advantages: dict[str, list[torch.Tensor]],
+                        b_returns: dict[str, list[torch.Tensor]],
+                        b_values: dict[str, list[torch.Tensor]],
+                        train_num_collect: int,
+                        minibatch_size: int,
+                        clip_vloss: bool,
+                        clip_coef: float,
+                        norm_adv: bool,
+                        ent_coef: float,
+                        vf_coef: float,
+                        max_grad_norm: float
+                        ) -> tuple[float, float, float, float, float, list[float]]:
+    """
+    Update weights for a player with PPO
+    """
     clipfracs = []
     for start in range(0, train_num_collect, minibatch_size):
         end = start + minibatch_size
         mb_inds = b_inds[start:end]
 
-        mb_obs = envs.concatenate_obs(list(map(lambda i: b_obs[player][i], mb_inds)))
-        mb_va = envs.concatenate_va(list(map(lambda i: b_va[player][i], mb_inds)))
-        mb_actions = envs.concatenate_action(list(map(lambda i: b_actions[player][i], mb_inds)))
+        mb_obs = tree.map_structure(lambda x: x.view(-1, *x.shape[2:])[mb_inds], b_obs[player])
+        mb_va = tree.map_structure(lambda x: x.view(-1, *x.shape[2:])[mb_inds], b_va[player])
+        mb_actions = tree.map_structure(lambda x: x.view(-1, *x.shape[2:])[mb_inds], b_actions[player])
 
         newlogprob, newvalue, _, entropy = sample_action_for_player(agent, mb_obs, mb_va, mb_actions)
 
@@ -254,8 +346,10 @@ def optimize_for_player(player, agent, optimizer, b_obs, b_va, b_actions, b_logp
                 mb_advantages = mb_advantages
             else:
                 mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+        mb_returns = b_returns[player][mb_inds]
+        mb_values = b_values[player][mb_inds]
 
-        loss, pg_loss, entropy_loss, v_loss = calculate_loss(mb_inds, mb_advantages, newvalue, entropy, ratio, clip_coef, ent_coef, vf_coef)
+        loss, pg_loss, entropy_loss, v_loss = calculate_loss(mb_advantages, mb_returns, mb_values, newvalue, entropy, ratio, clip_vloss, clip_coef, ent_coef, vf_coef)
 
         optimizer.zero_grad()
         loss.backward()
@@ -265,9 +359,7 @@ def optimize_for_player(player, agent, optimizer, b_obs, b_va, b_actions, b_logp
         return v_loss, pg_loss, entropy_loss, approx_kl, old_approx_kl, clipfracs
 
 
-
-if __name__ == "__main__":
-    args = parse_args()
+def main(args, device):
     player_id = 0
     enemy_id = 1 - player_id
     player = f'player_{player_id}'
@@ -282,6 +374,8 @@ if __name__ == "__main__":
             "hyperparameters",
             "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
         )
+    else:
+        writer = None
 
     save_args(args, save_path+'args.json')
 
@@ -291,17 +385,13 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    # Get device
-    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-    logger.info(f"Device: {device}")
-
     # env setup
     envs = LuxSyncVectorEnv(
-        [make_env(i, args.seed + i, args.replay_dir) for i in range(args.num_envs)]
+        [make_env(i, args.seed + i, args.replay_dir) for i in range(args.num_envs)],
     )
     
     # Create model
-    agent, optimizer = create_model(args, device)
+    agent, optimizer = create_model(device, args.eval, args.load_model_path, args.evaluate_num, args.learning_rate, writer)
 
     # Start the game
     global_step = 0
@@ -314,18 +404,19 @@ if __name__ == "__main__":
     for update in range(1, num_updates + 1):
 
         logger.info(f"Update {update} / {num_updates}")
-            
+        
         # Init value stores for PPO
-        obs = dict(player_0=list(),player_1=list())
-        actions = dict(player_0=list(),player_1=list())
-        valid_actions = dict(player_0=list(),player_1=list())
+        obs = {}
+        actions = {}
+        valid_actions = {}
         logprobs = dict(player_0=torch.zeros((args.max_train_step, args.num_envs)).to(device), player_1=torch.zeros((args.max_train_step, args.num_envs)).to(device))
         rewards = dict(player_0=torch.zeros((args.max_train_step, args.num_envs)).to(device),player_1=torch.zeros((args.max_train_step, args.num_envs)).to(device))
         dones = torch.zeros((args.max_train_step, args.num_envs)).to(device)
         values = dict(player_0=torch.zeros((args.max_train_step, args.num_envs)).to(device),player_1=torch.zeros((args.max_train_step, args.num_envs)).to(device))
 
         # Reset envs, get obs
-        next_obs, infos = envs.reset()
+        next_obs, _ = envs.reset()
+        next_obs = tree.map_structure(lambda x: np2torch(x, torch.float32), next_obs)
         next_done = torch.zeros(args.num_envs).to(device)
 
         total_done = 0
@@ -338,7 +429,7 @@ if __name__ == "__main__":
 
         # Init stats
         total_return = 0.0
-        episode_return = torch.zeros(args.num_envs)
+        episode_return = np.zeros(args.num_envs)
         episode_return_list = []
         episode_sub_return = {}
         episode_sub_return_list = []
@@ -353,42 +444,50 @@ if __name__ == "__main__":
             global_step += 1 * args.num_envs
 
             # Save obervations for PPO
-            for player_id, player in enumerate(['player_0', 'player_1']):
-                obs[player] += envs.split(next_obs[player])
+            for _ in ['player_0', 'player_1']:
                 dones[train_step] = next_done
+            put_into_store(next_obs, train_step, obs, args.max_train_step, args.num_envs, device)
 
             # Sample actions
             action, valid_action, logprob, value = sample_actions_for_players(envs, agent, next_obs)
 
             # Save actions for PPO
-            for player_id, player in enumerate(['player_0', 'player_1']):
-                values[player][train_step] = value[player_id]
-                valid_actions[player] += envs.split(valid_action[player_id])
-                actions[player] += envs.split(action[player_id])
-                logprobs[player][train_step] = logprob[player_id]
-            
-            action = tree.map_structure(lambda x: torch2np(x, np.int16), action)
+            put_into_store(action, train_step, actions, args.max_train_step, args.num_envs, device)
+            put_into_store(valid_action, train_step, valid_actions, args.max_train_step, args.num_envs, device)
+            for player in ['player_0', 'player_1']:
+                logprobs[player][train_step] = logprob[player]
+                values[player][train_step] = value[player]
 
             # Step environment
+            _action = {}
+            for player_id, player in enumerate(['player_0', 'player_1']):
+                _action[player_id] = action[player]
+            action = tree.map_structure(lambda x: torch2np(x, np.int32), _action)
+            del _action
             next_obs, reward, terminated, truncation, info = envs.step(action)
+            next_obs = tree.map_structure(lambda x: np2torch(x, torch.float32), next_obs)
+
+            episode_return += np.mean(reward, axis=-1)
+
+            reward = np2torch(reward, torch.float32)
+
             done = terminated | truncation
-            next_done = torch.tensor(done, dtype=torch.long).to(device)
+            next_done = np2torch(done, torch.bool)
 
             # Save rewards for PPO
             for player_id, player in enumerate(['player_0', 'player_1']):
-                rewards[player][train_step] = torch.tensor(reward[:, player_id]).to(device).view(-1)
+                rewards[player][train_step] = reward[:, player_id].view(-1)
 
             # Save stats
-            episode_return += torch.mean(torch.tensor(reward), dim=-1).to(episode_return.device)
-            if True in next_done:
-                episode_return_list.append(np.mean(episode_return[torch.where(next_done.cpu()==True)].cpu().numpy()))
-                episode_return[torch.where(next_done==True)] = 0
+            if True in done:
+                episode_return_list.append((episode_return[np.where(done==True)]).mean())
+                episode_return[np.where(done==True)] = 0
                 tmp_sub_return_dict = {}
                 for key in episode_sub_return:
-                    tmp_sub_return_dict.update({key: np.mean(episode_sub_return[key][torch.where(next_done.cpu()==True)].cpu().numpy())})
-                    episode_sub_return[key][torch.where(next_done.cpu()==True)] = 0
+                    tmp_sub_return_dict.update({key: np.mean(episode_sub_return[key][np.where(done==True)])})
+                    episode_sub_return[key][np.where(done==True)] = 0
                 episode_sub_return_list.append(tmp_sub_return_dict)
-                total_done_tmp = torch.sum(next_done).cpu().numpy()
+                total_done_tmp = np.sum(done)
                 total_done += total_done_tmp
             total_return += cal_mean_return(info['agents'], player_id=0)
             total_return += cal_mean_return(info['agents'], player_id=1)
@@ -405,24 +504,25 @@ if __name__ == "__main__":
             # Train with PPO
             if train_step >= args.max_train_step-1 or step == args.num_steps-1:  
                 logger.info("Training with PPO")
-                returns, advantages = calculate_returns(envs, agent, next_obs, values, device, args.max_train_step, args.num_envs, args.gamma, args.gae_lambda)
+                returns, advantages = calculate_returns(envs, agent, next_obs, next_done, dones, rewards, values, device, args.max_train_step, args.num_envs, args.gamma, args.gae_lambda)
 
                 # flatten the batch
-                b_obs = obs   
-                b_logprobs = tree.map_structure(lambda x: x.reshape(-1), logprobs)
+                b_obs = obs
                 b_actions = actions
-                b_advantages = tree.map_structure(lambda x: x.reshape(-1), advantages)
-                b_returns = tree.map_structure(lambda x: x.reshape(-1), returns)
-                b_values = tree.map_structure(lambda x: x.reshape(-1), values)
                 b_va = valid_actions
+                b_logprobs = tree.map_structure(lambda x: x.view(-1), logprobs)
+                b_advantages = tree.map_structure(lambda x: x.view(-1), advantages)
+                b_returns = tree.map_structure(lambda x: x.view(-1), returns)
+                b_values = tree.map_structure(lambda x: x.view(-1), values)
 
                 # Optimizing the policy and value network
                 b_inds = np.arange(args.train_num_collect)
                 clipfracs = []
                 for epoch in range(args.update_epochs):
                     np.random.shuffle(b_inds)
+                    _b_inds = np2torch(b_inds, torch.long)
                     for player_id, player in enumerate(['player_0', 'player_1']):
-                        v_loss, pg_loss, entropy_loss, approx_kl, old_approx_kl, clipfracs = optimize_for_player(player, agent, optimizer, b_obs, b_va, b_actions, b_logprobs, b_advantages, b_returns, b_values, args.train_num_collect, args.minibatch_size, args.clip_coef, args.norm_adv, args.ent_coef, args.vf_coef, args.max_grad_norm)
+                        v_loss, pg_loss, entropy_loss, approx_kl, old_approx_kl, clipfracs = optimize_for_player(player, agent, envs, optimizer, _b_inds, b_obs, b_va, b_actions, b_logprobs, b_advantages, b_returns, b_values, args.train_num_collect, args.minibatch_size, args.clip_vloss, args.clip_coef, args.norm_adv, args.ent_coef, args.vf_coef, args.max_grad_norm)
                         clipfracs += clipfracs
 
                         if args.target_kl is not None:
@@ -450,14 +550,18 @@ if __name__ == "__main__":
                 logger.info(f"SPS: {round(global_step / (time.time() - start_time), 2)}")
                 logger.info(f"global step: {global_step}")
 
-                total_done += dones.sum().cpu().numpy()
-                obs = dict(player_0=list(),player_1=list())
-                actions = dict(player_0=list(),player_1=list())
-                valid_actions = dict(player_0=list(),player_1=list())
-                logprobs = dict(player_0=torch.zeros((args.max_train_step, args.num_envs)).to(device), player_1=torch.zeros((args.max_train_step, args.num_envs)).to(device))
-                rewards = dict(player_0=torch.zeros((args.max_train_step, args.num_envs)).to(device),player_1=torch.zeros((args.max_train_step, args.num_envs)).to(device))
-                dones = torch.zeros((args.max_train_step, args.num_envs)).to(device)
-                values = dict(player_0=torch.zeros((args.max_train_step, args.num_envs)).to(device),player_1=torch.zeros((args.max_train_step, args.num_envs)).to(device))
+                total_done += dones.sum().item()
+
+                reset_store(obs)
+                reset_store(actions)
+                reset_store(valid_actions)
+
+                for player_id, player in enumerate(['player_0', 'player_1']):
+                    logprobs[player] = 0
+                    rewards[player] = 0
+                    dones = 0
+                    values[player] = 0
+
                 train_step = -1
             
             # Evaluate
@@ -479,3 +583,16 @@ if __name__ == "__main__":
     envs.close()
     if LOG:
         writer.close()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+
+    # Get device
+    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+    logger.info(f"Device: {device}")
+
+    np2torch = lambda x, dtype: torch.tensor(x).type(dtype).to(device)
+    torch2np = lambda x, dtype: x.cpu().numpy().astype(dtype)
+ 
+    main(args, device)
