@@ -445,7 +445,7 @@ def main(args, device):
 
             # Save obervations for PPO
             for _ in ['player_0', 'player_1']:
-                dones[train_step] = next_done
+                dones[train_step] = next_done.any()
             put_into_store(next_obs, train_step, obs, args.max_train_step, args.num_envs, device)
 
             # Sample actions
@@ -479,13 +479,13 @@ def main(args, device):
                 rewards[player][train_step] = reward[:, player_id].view(-1)
 
             # Save stats
-            if True in done:
-                episode_return_list.append((episode_return[np.where(done==True)]).mean())
-                episode_return[np.where(done==True)] = 0
+            if done.any(-1):
+                episode_return_list.append((episode_return[np.where(done.any()==True)]).mean())
+                episode_return[np.where(done.any()==True)] = 0
                 tmp_sub_return_dict = {}
                 for key in episode_sub_return:
-                    tmp_sub_return_dict.update({key: np.mean(episode_sub_return[key][np.where(done==True)])})
-                    episode_sub_return[key][np.where(done==True)] = 0
+                    tmp_sub_return_dict.update({key: np.mean(episode_sub_return[key][np.where(done.any()==True)])})
+                    episode_sub_return[key][np.where(done.any()==True)] = 0
                 episode_sub_return_list.append(tmp_sub_return_dict)
                 total_done_tmp = np.sum(done)
                 total_done += total_done_tmp

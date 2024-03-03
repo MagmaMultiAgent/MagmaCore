@@ -442,8 +442,8 @@ def lux_worker(index, env_fn, pipe, parent_pipe, shared_memory, error_queue):
             pipe.send((observation, True))
         elif command == "step":
             observation, reward, termination, truncation, info = env.step(data)
-            done = {key: termination[key] or truncation[key] for key in termination.keys()}
-            done = done["player_0"] or done["player_1"]
+            done = [te or tr for te, tr in zip(termination, truncation)]
+            done = sum(done) > 0
             if done:
                 observation, _ = env.reset()
             pipe.send(((observation, reward, termination, truncation, info), True))
