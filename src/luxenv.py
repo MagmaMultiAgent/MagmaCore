@@ -364,9 +364,7 @@ class LuxEnv(gym.Env):
                 actions[id] = raw_action
             actions = tree.map_structure(lambda x: torch2np(x), actions)                
             obs_list, reward, terminated, truncation, info = self.step(actions)
-            _terminated = list(terminated.values())
-            _truncation = list(truncation.values())
-            done = [te or tr for te, tr in zip(_terminated, _truncation)]
+            done = [te or tr for te, tr in zip(terminated, truncation)]
             done = sum(done) > 0
             return_own += reward[own_id]
             return_enemy += reward[enemy_id]

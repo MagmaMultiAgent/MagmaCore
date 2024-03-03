@@ -479,7 +479,7 @@ def main(args, device):
                 rewards[player][train_step] = reward[:, player_id].view(-1)
 
             # Save stats
-            if done.any(-1):
+            if done.any():
                 episode_return_list.append((episode_return[np.where(done.any()==True)]).mean())
                 episode_return[np.where(done.any()==True)] = 0
                 tmp_sub_return_dict = {}
