@@ -130,8 +130,8 @@ class EnvParam:
     parser: Literal['sparse', 'dense', 'dense2'] = "dense"
     rule_based_early_step: bool = True
 
-    map_size: int = 48
-    MAX_FACTORIES: int = 5
+    map_size: int = 32
+    MAX_FACTORIES: int = 3
     num_turn_per_cycle: int = 50
     init_from_replay_ratio: float = 1
 

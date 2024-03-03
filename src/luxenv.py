@@ -314,6 +314,8 @@ class LuxEnv(gym.Env):
         actions, action_stats = self.action_parser.parse(self.game_state, actions)
         obs, rewards, terminations, truncations, infos = self.proxy.step(actions)  # interact with env
         dones = {key: terminations[key] or truncations[key] for key in terminations.keys()}
+        terminations = list(terminations.values())
+        truncations = list(truncations.values())
         self.real_obs = obs
         for player_id, player in enumerate(self.proxy.agents):
             o = obs[player]
@@ -364,7 +366,8 @@ class LuxEnv(gym.Env):
             obs_list, reward, terminated, truncation, info = self.step(actions)
             _terminated = list(terminated.values())
             _truncation = list(truncation.values())
-            done = sum(_terminated + _truncation) > 0
+            done = [te or tr for te, tr in zip(_terminated, _truncation)]
+            done = sum(done) > 0
             return_own += reward[own_id]
             return_enemy += reward[enemy_id]
             episode_length += 1

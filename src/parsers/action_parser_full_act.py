@@ -108,6 +108,8 @@ class ActionParser():
             x, y = robot.pos
             action = raw_actions["unit_act"][:, x, y].copy()
             act_type = action[UnitActChannel.TYPE].astype(int)
+            if np.sum(action)==0:
+                act_type = np.array(UnitActType.DO_NOTHING.value).astype(int)
             dir = action[UnitActChannel.DIRECTION].astype(int)
             resource = action[UnitActChannel.RESOURCE].astype(int)
             percentage = action[UnitActChannel.AMOUNT]
@@ -268,18 +270,37 @@ class ActionParser():
 
         valid_actions = tree.map_structure(
             lambda dim: np.zeros((dim, EnvParam.map_size, EnvParam.map_size), dtype=np.bool8), act_dims_mapping)
+        
 
+        # construct unit_map
+        enemy_units = game_state.units[enemy]
+        enemy_unit_positions = [tuple(u.pos) for u in enemy_units.values()]
+        own_units = game_state.units[player]
+        own_unit_positions = [tuple(u.pos) for u in own_units.values()]
+        unit_map = np.full_like(game_state.board.rubble, fill_value=-1, dtype=np.int32)
+        for unit_id, unit in game_state.units[player].items():
+            x, y = unit.pos
+            unit_map[x, y] = int(unit_id[len("unit_"):])
+
+        factories = game_state.factories[player]
+        factory_positions = [tuple(f.pos) for f in factories.values()]
         factory_va = valid_actions["factory_act"]
         for unit_id, factory in game_state.factories[player].items():
             x, y = factory.pos
-            # valid build light
-            if factory.cargo.metal >= env_cfg.ROBOTS['LIGHT'].METAL_COST\
-                and factory.power >= env_cfg.ROBOTS['LIGHT'].POWER_COST:
-                factory_va[FactoryActType.BUILD_LIGHT, x, y] = True
+            unit_on_factory = (x, y) in own_unit_positions
+            
             # valid build heavy
             if factory.cargo.metal >= env_cfg.ROBOTS['HEAVY'].METAL_COST\
                 and factory.power >= env_cfg.ROBOTS['HEAVY'].POWER_COST:
                 factory_va[FactoryActType.BUILD_HEAVY, x, y] = True
+
+            # valid build light
+            if factory.cargo.metal >= env_cfg.ROBOTS['LIGHT'].METAL_COST\
+                and factory.power >= env_cfg.ROBOTS['LIGHT'].POWER_COST\
+                and factory.cargo.metal < 60\
+                and not unit_on_factory:
+                factory_va[FactoryActType.BUILD_LIGHT, x, y] = ~factory_va[FactoryActType.BUILD_HEAVY, x, y]
+            
             # valid grow lichen
             lichen_strains_size = np.sum(board.lichen_strains == factory.strain_id)
             if factory.cargo.water >= (lichen_strains_size + 1) // env_cfg.LICHEN_WATERING_COST_FACTOR + 1:
@@ -295,17 +316,21 @@ class ActionParser():
             # always can do nothing
             factory_va[FactoryActType.DO_NOTHING, x, y] = True
 
-        # construct unit_map
-        unit_map = np.full_like(game_state.board.rubble, fill_value=-1, dtype=np.int32)
-        for unit_id, unit in game_state.units[player].items():
-            x, y = unit.pos
-            unit_map[x, y] = int(unit_id[len("unit_"):])
 
         for unit_id, unit in game_state.units[player].items():
             x, y = unit.pos
             action_queue_cost = unit.action_queue_cost(game_state)
+            battery_capacity = unit.unit_cfg.BATTERY_CAPACITY
             if unit.power >= action_queue_cost:
-                valid_actions["unit_act"]["act_type"][:, x, y] = True
+                if (unit.power - action_queue_cost) >= battery_capacity * 0.25:
+                    valid_actions["unit_act"]["act_type"][:, x, y] = True
+                    valid_actions["unit_act"]["act_type"][UnitActType.RECHARGE, x, y] = False
+                else:
+                    valid_actions["unit_act"]["act_type"][UnitActType.MOVE, x, y] = True
+                    valid_actions["unit_act"]["act_type"][UnitActType.PICKUP, x, y] = True
+                    valid_actions["unit_act"]["act_type"][UnitActType.RECHARGE, x, y] = True
+
+                valid_actions["unit_act"]["act_type"][UnitActType.DO_NOTHING, x, y] = False
             else:
                 valid_actions["unit_act"]["act_type"][UnitActType.DO_NOTHING, x, y] = True
                 continue
@@ -326,6 +351,19 @@ class ActionParser():
                 if factory_under_unit(target_pos, game_state.factories[enemy]) is not None:
                     continue
 
+                # don't step on other units
+                unit_at_target = unit_map[target_pos[0], target_pos[1]]
+                if unit_at_target != -1:
+                    continue
+
+                # don't step on middle of factory
+                if tuple(target_pos) in factory_positions:
+                    continue
+
+                # only step on enemy if unit is heavy
+                if unit.unit_type != "HEAVY" and tuple(target_pos) in enemy_unit_positions:
+                    continue
+
                 power_required = unit.move_cost(game_state, direction)
                 if unit.power - action_queue_cost >= power_required:
                     valid_actions["unit_act"]["move"]["direction"][direction, x, y] = True
@@ -334,7 +372,9 @@ class ActionParser():
             valid_actions["unit_act"]["transfer"]['repeat'][0, x, y] = True
             amounts = [unit.cargo.ice, unit.cargo.ore, unit.cargo.water, unit.cargo.metal, unit.power]
             for i, a in enumerate(amounts):
-                valid_actions["unit_act"]["transfer"]['resource'][i, x, y] = (a > 0)
+                valid_actions["unit_act"]["transfer"]['resource'][i, x, y] = False
+            valid_actions["unit_act"]["transfer"]['resource'][0, x, y] = (a > 0)
+            valid_actions["unit_act"]["transfer"]['resource'][1, x, y] = (a > 0)
             for direction in range(1, len(move_deltas)):
                 target_pos = unit.pos + move_deltas[direction]
 
@@ -343,8 +383,8 @@ class ActionParser():
                     continue
 
                 there_is_a_target = False
-                if (target_pos >= 0).all() and (target_pos < env_cfg.map_size).all():
-                    there_is_a_target = (unit_map[target_pos[0], target_pos[1]] != -1)
+                # if (target_pos >= 0).all() and (target_pos < env_cfg.map_size).all():
+                #     there_is_a_target = (unit_map[target_pos[0], target_pos[1]] != -1)
                 if factory_under_unit(target_pos, game_state.factories[player]) is not None:
                     there_is_a_target = True
 
@@ -354,20 +394,24 @@ class ActionParser():
             # valid pickup
             valid_actions["unit_act"]["pickup"]['repeat'][0, x, y] = True
             factory = factory_under_unit(unit.pos, game_state.factories[player])
-            if factory is not None:
-                valid_actions["unit_act"]["act_type"][UnitActType.PICKUP, x, y] = True
+            if factory is not None and valid_actions["unit_act"]["act_type"][UnitActType.PICKUP, x, y]:
                 amounts = [
                     factory.cargo.ice, factory.cargo.ore, factory.cargo.water, factory.cargo.metal, factory.power
                 ]
                 for i, a in enumerate(amounts):
-                    valid_actions["unit_act"]["pickup"]['resource'][i, x, y] = (a > 0)
+                    valid_actions["unit_act"]["pickup"]['resource'][i, x, y] = False
+                valid_actions["unit_act"]["pickup"]['resource'][4, x, y] = True
 
             # valid dig
             if factory_under_unit(unit.pos, game_state.factories[player]) is None \
                 and unit.power - action_queue_cost >= unit.unit_cfg.DIG_COST:
-                if (board.lichen[x, y] > 0) or (board.rubble[x, y] > 0) \
-                    or (board.ice[x, y] > 0) or (board.ore[x, y] > 0):
-                    valid_actions["unit_act"]["dig"]['repeat'][:, x, y] = True
+                if (board.rubble[x, y] > 0) or (board.ice[x, y] > 0) or (board.ore[x, y] > 0):
+                    if board.ice[x, y] > 0 or board.ore[x, y] > 0:
+                        valid_actions["unit_act"]["dig"]['repeat'][0, x, y] = False
+                        valid_actions["unit_act"]["dig"]['repeat'][1, x, y] = True
+                    else:
+                        valid_actions["unit_act"]["dig"]['repeat'][0, x, y] = True
+                        valid_actions["unit_act"]["dig"]['repeat'][1, x, y] = False
 
             # valid selfdestruct
             if unit.power - action_queue_cost >= unit.unit_cfg.SELF_DESTRUCT_COST:
@@ -375,7 +419,8 @@ class ActionParser():
                 valid_actions["unit_act"]["self_destruct"]['repeat'][0, x, y] = True
 
             # valid recharge
-            valid_actions["unit_act"]["recharge"]['repeat'][0, x, y] = True
+            if unit.power < unit.unit_cfg.BATTERY_CAPACITY:
+                valid_actions["unit_act"]["recharge"]['repeat'][0, x, y] = True
 
         # calculate va for the flattened action space
         move_va = valid_actions["unit_act"]["move"]
@@ -399,6 +444,9 @@ class ActionParser():
 
         self_destruct_va = valid_actions["unit_act"]["act_type"][UnitActType.SELF_DESTRUCT][None] \
             & valid_actions["unit_act"]["self_destruct"]['repeat']  # 2
+        
+        # no self destruct allowed
+        self_destruct_va[:] = False
 
         recharge_va = valid_actions["unit_act"]["act_type"][UnitActType.RECHARGE][None] \
             & valid_actions["unit_act"]["recharge"]['repeat']  # 2

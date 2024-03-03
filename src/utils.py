@@ -86,7 +86,7 @@ class LuxRecordEpisodeStatistics(gym.Wrapper):
         observations, rewards, terminations, truncations, infos = super(LuxRecordEpisodeStatistics, self).step(
             action
         )
-        dones = list({key:terminations[key] or truncations[key] for key in terminations.keys()}.values())
+        dones = [te or tr for te, tr in zip(terminations, truncations)]
         self.episode_returns += rewards
         self.episode_lengths += 1
         # if not self.is_vector_env:
