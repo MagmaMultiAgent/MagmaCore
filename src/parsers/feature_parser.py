@@ -12,6 +12,7 @@ class LuxFeature(NamedTuple):
     global_feature: np.ndarray
     map_feature: np.ndarray
     action_feature: dict
+    location_feature: np.ndarray
 
 
 class FeatureParser():
@@ -77,8 +78,14 @@ class FeatureParser():
             'unit_heavy',
         ]
 
+        self.location_feature_names = [
+            "factory",
+            "unit"
+        ]
+
         self.global_info_names = [
             'factory_count',
+            'unit_count',
             'light_count',
             'heavy_count',
             'unit_ice',
@@ -98,6 +105,33 @@ class FeatureParser():
             'total_power',
             'lichen_count',
         ]
+
+        self.global_info_dicts = {
+            'units': [
+                'heavy',
+                'power',
+                'cargo_ice',
+                'cargo_ore',
+                'cargo_water',
+                'cargo_metal',
+                'rubble_under',
+                'ice_under',
+                'x',
+                'y',
+                'group_id'
+            ],
+            'factories': [
+                'power',
+                'cargo_ice',
+                'cargo_ore',
+                'cargo_water',
+                'cargo_metal',
+                'water_cost',
+                'x',
+                'y',
+                'group_id'
+            ]
+        }
 
     def parse(self, obs, env_cfg):
         all_feature = {}
@@ -128,6 +162,37 @@ class FeatureParser():
         factories = list(obs.factories[player].values())
         units = list(obs.units[player].values())
 
+
+        unit_info = {}
+        factory_info = {}
+
+        for unit in units:
+            unit_info[unit.unit_id] = {
+                'heavy': int(unit.unit_type == 'HEAVY'),
+                'power': unit.power,
+                'cargo_ice': unit.cargo.ice,
+                'cargo_ore': unit.cargo.ore,
+                'cargo_water': unit.cargo.water,
+                'cargo_metal': unit.cargo.metal,
+                'rubble_under': obs.board.rubble[unit.pos[0], unit.pos[1]],
+                'ice_under': obs.board.ice[unit.pos[0], unit.pos[1]],
+                'x': unit.pos[0],
+                'y': unit.pos[1],
+                'group_id': self.get_unit_id(unit, factories)
+            }
+        for factory in factories:
+            factory_info[factory.unit_id] = {
+                'power': factory.power,
+                'cargo_ice': factory.cargo.ice,
+                'cargo_ore': factory.cargo.ore,
+                'cargo_water': factory.cargo.water,
+                'cargo_metal': factory.cargo.metal,
+                'water_cost': np.sum(obs.board.lichen_strains == factory.strain_id) // obs.env_cfg.LICHEN_WATERING_COST_FACTOR + 1,
+                'x': factory.pos[0],
+                'y': factory.pos[1],
+                'group_id': self.get_factory_id(factory)
+            }
+
         global_info['light_count'] = sum(int(u.unit_type == 'LIGHT') for u in units)
         global_info['heavy_count'] = sum(int(u.unit_type == 'HEAVY') for u in units)
         global_info["factory_count"] = len(factories)
@@ -157,11 +222,20 @@ class FeatureParser():
             global_info['lichen_count'] = lichen_count
         else:
             global_info['lichen_count'] = 0
+
+        # Add unit and factory info
+        global_info['units'] = unit_info
+        global_info['factories'] = factory_info
+
         return global_info
 
     def _get_feature(self, obs: kit.kit.GameState, player: str, output_dict=True):
         env_cfg: EnvConfig = obs.env_cfg
         enemy = 'player_1' if player == 'player_0' else 'player_0'
+
+        location_feature = {name: np.zeros_like(obs.board.ice, dtype=np.int32) for name in self.location_feature_names}
+        location_feature['factory'][:] = -1
+        location_feature['unit'][:] = -1
 
         map_feature = {name: np.zeros_like(obs.board.ice, dtype=np.float32) for name in self.map_featrue_names}
         map_feature['ice'] = obs.board.ice
@@ -230,6 +304,8 @@ class FeatureParser():
                     map_feature['factory_can_grow_lichen'][x, y] = True
                 map_feature['factory_water_cost'][x, y] = water_cost
 
+                location_feature['factory'][x, y] = self.get_factory_id(factory)
+
         for owner, units in obs.units.items():
             for uid, unit in units.items():
                 x, y = unit.pos
@@ -246,6 +322,8 @@ class FeatureParser():
                 map_feature['unit_light'][x, y] = unit.unit_type == "LIGHT"
                 map_feature['unit_heavy'][x, y] = unit.unit_type == "HEAVY"
                 assert unit.unit_type in ["LIGHT", "HEAVY"]
+
+                location_feature['unit'][x, y] = self.get_unit_id(unit, list(obs.factories[player].values()))
 
         # action queue
         action_feature = dict(
@@ -311,11 +389,18 @@ class FeatureParser():
 
         global_feature = np.array(list(global_feature.values()))
         map_feature = np.array(list(map_feature.values()))
+        location_feature = np.array(list(location_feature.values()))
 
         if output_dict:
-            return {'global_feature': global_feature, 'map_feature': map_feature, 'action_feature': action_feature}
+            return {'global_feature': global_feature, 'map_feature': map_feature, 'action_feature': action_feature, 'location_feature': location_feature}
 
-        return LuxFeature(global_feature, map_feature, action_feature)
+        return LuxFeature(global_feature, map_feature, action_feature, location_feature)
+
+    def get_unit_id(self, unit, factories):
+        return -1
+    
+    def get_factory_id(self, factory):
+        return -1
 
     @staticmethod
     def log_env_stats(env_stats):

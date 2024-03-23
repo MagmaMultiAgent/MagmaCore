@@ -142,7 +142,7 @@ class Net(nn.Module):
                 nn.init.zeros_(param)
 
     # RL training
-    def forward(self, global_feature, map_feature, action_feature, va, action=None):
+    def forward(self, global_feature, map_feature, action_feature, location_feature, va, action=None):
         B, _, H, W = map_feature.shape
         action_emb = self.action_preprocess(action_feature)
 

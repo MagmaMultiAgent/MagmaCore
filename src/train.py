@@ -43,6 +43,29 @@ TensorPerPlayer = dict[str, dict[str, torch.Tensor]]
 
 LOG = True
 
+log_from_global_info = [
+    'factory_count',
+    'unit_count',
+    'light_count',
+    'heavy_count',
+    'unit_ice',
+    'unit_ore',
+    'unit_water',
+    'unit_metal',
+    'unit_power',
+    'factory_ice',
+    'factory_ore',
+    'factory_water',
+    'factory_metal',
+    'factory_power',
+    'total_ice',
+    'total_ore',
+    'total_water',
+    'total_metal',
+    'total_power',
+    'lichen_count'
+]
+
 def parse_args():
     # fmt: off
     parser = argparse.ArgumentParser()
@@ -62,11 +85,11 @@ def parse_args():
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="LuxAI_S2-v0",
         help="the id of the environment")
-    parser.add_argument("--total-timesteps", type=int, default=100000000,
+    parser.add_argument("--total-timesteps", type=int, default=1000000000,
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=3e-4,
         help="the learning rate of the optimizer")
-    parser.add_argument("--num-envs", type=int, default=1,
+    parser.add_argument("--num-envs", type=int, default=4,
         help="the number of parallel game environments")
     parser.add_argument("--num-steps", type=int, default=1024,
         help="the number of steps to run in each environment per policy rollout")
@@ -96,13 +119,13 @@ def parse_args():
         help="the maximum norm for the gradient clipping")
     parser.add_argument("--target-kl", type=float, default=None,
         help="the target KL divergence threshold")
-    parser.add_argument("--save-interval", type=int, default=100000, 
+    parser.add_argument("--save-interval", type=int, default=32768, 
         help="global step interval to save model")
     parser.add_argument("--load-model-path", type=str, default=None,
         help="path for pretrained model loading")
-    parser.add_argument("--evaluate-interval", type=int, default=10000,
+    parser.add_argument("--evaluate-interval", type=int, default=32768,
         help="evaluation steps")
-    parser.add_argument("--evaluate-num", type=int, default=5,
+    parser.add_argument("--evaluate-num", type=int, default=20,
         help="evaluation numbers")
     parser.add_argument("--replay-dir", type=str, default=None,
         help="replay dirs to reset state")
@@ -182,6 +205,7 @@ def sample_action_for_player(agent: Net, obs: TensorPerKey, valid_action: Tensor
         obs['global_feature'],
         obs['map_feature'], 
         obs['action_feature'],
+        obs['location_feature'],
         valid_action,
         forced_action
     )
@@ -437,7 +461,7 @@ def main(args, device):
         
         for step in range(0, args.num_steps):
 
-            if (step+1) % (2**4) == 0:
+            if (step+1) % (2**6) == 0:
                 logger.info(f"Step {step + 1} / {args.num_steps}")
 
             train_step += 1 
@@ -500,6 +524,24 @@ def main(args, device):
                     for key in episode_sub_return.keys():
                         mean_episode_sub_return[key] = np.mean(list(map(lambda sub: sub[key], episode_sub_return_list)))
                         writer.add_scalar(f"sub_reward/{key}", mean_episode_sub_return[key], global_step)
+
+                    global_info_log = {
+                        "total": {},
+                        "player_0": {},
+                        "player_1": {}
+                    }
+                    for key in log_from_global_info:
+                        for env_id in range(args.num_envs):
+                            for player in ["player_0", "player_1"]:
+                                if key not in global_info_log[player]:
+                                    global_info_log[player][key] = []
+                                if key not in global_info_log["total"]:
+                                    global_info_log["total"][key] = []
+                                global_info_log[player][key].append(info[player][env_id][key])
+                                global_info_log["total"][key].append(info[player][env_id][key])
+                    for groupname, group in global_info_log.items():
+                        for key, value in group.items():
+                            writer.add_scalar(f"global_info/{groupname}_{key}", sum(value)/len(value), global_step)
 
             # Train with PPO
             if train_step >= args.max_train_step-1 or step == args.num_steps-1:  

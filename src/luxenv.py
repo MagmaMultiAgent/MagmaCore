@@ -190,11 +190,20 @@ def get_single_observation_space(map_size):
             'n': spaces.MultiDiscrete(np.full((map_size, map_size, 20), 9999), dtype=np.float64)
         }
     )
+
+    location_feature_names = {
+        "factory": 1000,
+        "unit": 1000
+    }
+    location_feature_space = np.tile(np.array(list(location_feature_names.values())).reshape(len(location_feature_names), 1, 1), (1, map_size, map_size))
+    location_feature_space = spaces.MultiDiscrete(location_feature_space, dtype=np.float64)
+
     obs_space = spaces.Dict(
         {
             'global_feature': global_feature_space, 
             'map_feature': map_featrue_space, 
-            'action_feature': action_feature_space
+            'action_feature': action_feature_space,
+            'location_feature': location_feature_space
         }
     )
     return obs_space
@@ -339,6 +348,8 @@ class LuxEnv(gym.Env):
                 "action_stats": action_stats[team]
             }
             info["agents"].append(agent_info)
+        
+        info = info | global_info
         return obs_list, reward, terminations, truncations, info
     
     def eval(self, own_policy, enemy_policy):
@@ -359,6 +370,7 @@ class LuxEnv(gym.Env):
                     np2torch([obs_list[f'player_{id}']['global_feature']], torch.float32),
                     np2torch([obs_list[f'player_{id}']['map_feature']], torch.float32), 
                     tree.map_structure(lambda x: np2torch([x], torch.int16), obs_list['player_'+str(id)]['action_feature']),
+                    np2torch([obs_list[f'player_{id}']['location_feature']], torch.float32),
                     tree.map_structure(lambda x: np2torch([x], torch.bool), valid_action)
                 )
                 actions[id] = raw_action
