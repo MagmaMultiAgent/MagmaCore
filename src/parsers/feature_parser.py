@@ -127,6 +127,7 @@ class FeatureParser():
                 'cargo_water',
                 'cargo_metal',
                 'water_cost',
+                'lichen_count',
                 'x',
                 'y',
                 'group_id'
@@ -188,6 +189,7 @@ class FeatureParser():
                 'cargo_water': factory.cargo.water,
                 'cargo_metal': factory.cargo.metal,
                 'water_cost': np.sum(obs.board.lichen_strains == factory.strain_id) // obs.env_cfg.LICHEN_WATERING_COST_FACTOR + 1,
+                'lichen_count': np.sum(obs.board.lichen[obs.board.lichen_strains == factory.strain_id]),
                 'x': factory.pos[0],
                 'y': factory.pos[1],
                 'group_id': self.get_factory_id(factory)

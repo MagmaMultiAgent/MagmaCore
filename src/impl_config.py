@@ -127,7 +127,7 @@ action_structure = tree.map_structure(lambda x: None, asdict(FullAct()))
 
 @dataclass
 class EnvParam:
-    parser: Literal['sparse', 'dense', 'dense2'] = "dense"
+    parser: Literal['sparse', 'dense', 'dense2', 'simple'] = "simple"
     rule_based_early_step: bool = True
 
     map_size: int = 32

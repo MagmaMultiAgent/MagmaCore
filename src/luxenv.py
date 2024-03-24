@@ -7,7 +7,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import tree
 from luxai_s2.env import EnvConfig, LuxAI_S2
-from parsers import ActionParser,FeatureParser,DenseRewardParser,Dense2RewardParser,SparseRewardParser
+from parsers import ActionParser,FeatureParser,DenseRewardParser,Dense2RewardParser,SparseRewardParser,SimpleRewardParser
 from kit.kit import obs_to_game_state
 from replay import random_init
 from player import Player
@@ -254,6 +254,8 @@ class LuxEnv(gym.Env):
             self.reward_parser = DenseRewardParser()
         elif EnvParam.parser == 'dense2':
             self.reward_parser = Dense2RewardParser()
+        elif EnvParam.parser == 'simple':
+            self.reward_parser = SimpleRewardParser()
         else:
             raise NotImplementedError
         self.feature_parser = FeatureParser()
