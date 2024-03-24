@@ -286,6 +286,7 @@ class ActionParser():
         factories = game_state.factories[player]
         factory_positions = [tuple(f.pos) for f in factories.values()]
         factory_va = valid_actions["factory_act"]
+        factory_strains = [f.strain_id for f in factories.values()]
         for unit_id, factory in game_state.factories[player].items():
             x, y = factory.pos
             unit_on_factory = (x, y) in own_unit_positions
@@ -317,28 +318,34 @@ class ActionParser():
             factory_va[FactoryActType.DO_NOTHING, x, y] = True
 
         # unit actions
+        unit_move_targets = {}  # ensure that the units won't trample each other
         for unit_id, unit in game_state.units[player].items():
             x, y = unit.pos
             action_queue_cost = unit.action_queue_cost(game_state)
 
+            # if unit.power >= action_queue_cost:
+            #     valid_actions["unit_act"]["act_type"][:, x, y] = True
+            #     valid_actions["unit_act"]["act_type"][UnitActType.DO_NOTHING, x, y] = False
+
+            #     if (unit.power - action_queue_cost) >= (unit.unit_cfg.DIG_COST * 2):
+            #         valid_actions["unit_act"]["act_type"][UnitActType.PICKUP, x, y] = False
+            #         valid_actions["unit_act"]["act_type"][UnitActType.RECHARGE, x, y] = False
+            #     else:
+            #         valid_actions["unit_act"]["act_type"][UnitActType.PICKUP, x, y] = True
+            #         valid_actions["unit_act"]["act_type"][UnitActType.RECHARGE, x, y] = True
+
+            # else:
+            #     valid_actions["unit_act"]["act_type"][UnitActType.DO_NOTHING, x, y] = True
+            #     continue
+
             if unit.power >= action_queue_cost:
                 valid_actions["unit_act"]["act_type"][:, x, y] = True
-                valid_actions["unit_act"]["act_type"][UnitActType.DO_NOTHING, x, y] = False
-
-                if (unit.power - action_queue_cost) >= (unit.unit_cfg.DIG_COST * 2):
-                    valid_actions["unit_act"]["act_type"][UnitActType.PICKUP, x, y] = False
-                    valid_actions["unit_act"]["act_type"][UnitActType.RECHARGE, x, y] = False
-                else:
-                    valid_actions["unit_act"]["act_type"][UnitActType.PICKUP, x, y] = True
-                    valid_actions["unit_act"]["act_type"][UnitActType.RECHARGE, x, y] = True
-
             else:
                 valid_actions["unit_act"]["act_type"][UnitActType.DO_NOTHING, x, y] = True
                 continue
 
             # valid unit move
-            valid_actions["unit_act"]["move"]["repeat"][1, x, y] = True  # always repeat
-            valid_actions["unit_act"]["move"]["repeat"][0, x, y] = False
+            valid_actions["unit_act"]["move"]["repeat"][:, x, y] = True
             for direction in range(len(move_deltas)):
                 target_pos = unit.pos + move_deltas[direction]
 
@@ -369,6 +376,23 @@ class ActionParser():
 
                 power_required = unit.move_cost(game_state, direction)
                 if unit.power - action_queue_cost >= power_required:
+
+                    if tuple(target_pos) in unit_move_targets:
+
+                        # if another heavy can already step there, don't step there
+                        if unit_move_targets[tuple(target_pos)]["is_heavy"]:
+                            continue
+
+                        # if not heavy, don't take away the step from other unit
+                        if unit.unit_type != "HEAVY":
+                            continue
+
+                        # if heavy, and the other unit is not heavy, take the step
+                        original_unit_x, original_unit_y = unit_move_targets[tuple(target_pos)]["coord"]
+                        original_unit_direction = unit_move_targets[tuple(target_pos)]["direction"]
+                        valid_actions["unit_act"]["move"]["direction"][original_unit_direction, original_unit_x, original_unit_y] = False
+
+                    unit_move_targets[tuple(target_pos)] = {"coord": (x, y), "direction": direction, "is_heavy": unit.unit_type == "HEAVY"}
                     valid_actions["unit_act"]["move"]["direction"][direction, x, y] = True
 
             # valid transfer
@@ -376,8 +400,8 @@ class ActionParser():
             amounts = [unit.cargo.ice, unit.cargo.ore, unit.cargo.water, unit.cargo.metal, unit.power]
             for i, a in enumerate(amounts):
                 valid_actions["unit_act"]["transfer"]['resource'][i, x, y] = False
-            valid_actions["unit_act"]["transfer"]['resource'][0, x, y] = (unit.cargo.ice >= 5)  # ice
-            valid_actions["unit_act"]["transfer"]['resource'][1, x, y] = (unit.cargo.ore >= 5)  # ore
+            valid_actions["unit_act"]["transfer"]['resource'][0, x, y] = (unit.cargo.ice >= 0)  # ice
+            valid_actions["unit_act"]["transfer"]['resource'][1, x, y] = (unit.cargo.ore >= 0)  # ore
 
             for direction in range(1, len(move_deltas)):
                 target_pos = unit.pos + move_deltas[direction]
@@ -412,8 +436,11 @@ class ActionParser():
                 if (board.lichen[x, y] > 0) or (board.rubble[x, y] > 0) \
                     or (board.ice[x, y] > 0) or (board.ore[x, y] > 0):
 
-                    valid_actions["unit_act"]["dig"]['repeat'][0, x, y] = False
-                    valid_actions["unit_act"]["dig"]['repeat'][1, x, y] = True
+                    # check if lichen doesn't belongs to player
+                    if board.lichen[x, y] <= 0 or board.lichen_strains[x, y] not in factory_strains:
+
+                        valid_actions["unit_act"]["dig"]['repeat'][0, x, y] = False
+                        valid_actions["unit_act"]["dig"]['repeat'][1, x, y] = True
 
             # NO SELF DESTRUCT ALLOWED    
             # # valid selfdestruct
