@@ -153,7 +153,7 @@ class RewardParam:
     metal_reward_weight: float = 0.002 * global_reward_weight
     power_reward_weight: float = 0.00005 * global_reward_weight
     lichen_reward_weight: float = 0.001 * global_reward_weight
-    factory_penalty_weight: float = -0.5 * global_reward_weight
+    factory_penalty_weight: float = 1 * global_reward_weight
     lose_penalty_coe: float = -0.1
     survive_reward_weight: float = 0.01 * global_reward_weight
 
