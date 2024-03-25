@@ -22,7 +22,7 @@ import torch
 import numpy as np
 from player import Player
 ### The model path
-PATH = 'your/model/path.pth'
+PATH = 'original_bettermask_model_786432.pth'
 ### DO NOT REMOVE THE FOLLOWING CODE ###
 agent_dict = (
     dict()
@@ -68,6 +68,7 @@ def agent_fn(observation, configurations):
             _,_,actions,_ = agent(torch.tensor(obs['global_feature'],dtype=torch.float).unsqueeze(0),
                                   torch.tensor(obs['map_feature'],dtype=torch.float).unsqueeze(0),\
                                 tree.map_structure(lambda x: np2torch(x, torch.int16), obs['action_feature']),\
+                                torch.tensor(obs['location_feature'],dtype=torch.float).unsqueeze(0),\
                                 tree.map_structure(lambda x: np2torch(x, torch.bool), valid_action)
                                             )
             actions = tree.map_structure(lambda x: torch2np(x), actions)

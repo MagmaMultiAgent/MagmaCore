@@ -47,6 +47,7 @@ class SimpleRewardParser(DenseRewardParser):
                 # lichen count
                 lichen_count = factory["lichen_count"]
                 lichen_reward = lichen_count / 20  # 20 lichen can be on a tile
+                lichen_reward *= 0.1
                 lichen_reward *= step_weight
                 factory_reward += lichen_reward
 
